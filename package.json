@@ -48,6 +48,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/zot24/gh-issue-tracker.git"
+    "url": "git+https://github.com/zot24/gh-issue-tracker.git"
   }
 }

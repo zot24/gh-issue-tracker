@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/zot24/gh-issue-tracker/compare/v1.1.0...v1.1.1) (2026-04-12)
+
+
+### Bug Fixes
+
+* **ci:** use correct release-please output keys for single-package repo ([#4](https://github.com/zot24/gh-issue-tracker/issues/4)) ([3b2aa3f](https://github.com/zot24/gh-issue-tracker/commit/3b2aa3f744e7c9f57916366f5bfd79cdacb36231))
+
 ## [1.1.0](https://github.com/zot24/gh-issue-tracker/compare/v1.0.0...v1.1.0) (2026-04-12)
 
 

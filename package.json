@@ -1,0 +1,49 @@
+{
+  "name": "gh-issue-tracker",
+  "version": "1.0.0",
+  "description": "Lightweight error tracking that creates GitHub Issues instead of sending to SaaS. Deduplication, fingerprinting, and rate limiting built-in.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": [
+    "error-tracking",
+    "github-issues",
+    "error-reporter",
+    "sentry-alternative",
+    "fingerprinting",
+    "deduplication"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "octokit": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.16"
+  }
+}

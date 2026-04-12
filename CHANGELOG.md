@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.7](https://github.com/zot24/gh-issue-tracker/compare/v1.1.6...v1.1.7) (2026-04-12)
+
+
+### Bug Fixes
+
+* **ci:** use granular NPM_TOKEN for automated publish ([#15](https://github.com/zot24/gh-issue-tracker/issues/15)) ([314ef26](https://github.com/zot24/gh-issue-tracker/commit/314ef26ce50461c3aa9551225517b697b1266979))
+
 ## [1.1.6](https://github.com/zot24/gh-issue-tracker/compare/v1.1.5...v1.1.6) (2026-04-12)
 
 

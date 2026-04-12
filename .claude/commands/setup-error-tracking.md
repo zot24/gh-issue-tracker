@@ -67,14 +67,14 @@ Ensure `.env` is in `.gitignore`. Verify `GITHUB_TOKEN` does NOT have a `NEXT_PU
 2. Wrap critical code in try/catch, call `captureException()` in catch
 3. Call `await flush()` before process exits
 
-## 6. Security verification
+## 6. Security check
 
-Check these before deploying:
-- [ ] `GITHUB_TOKEN` is server-side only (no `NEXT_PUBLIC_` prefix, not in browser bundle)
-- [ ] `gh-issue-tracker` is NOT imported in any `'use client'` component
+Verify before deploying:
+- [ ] Token uses fine-grained PAT scoped to Issues only on the target repo
+- [ ] Token env var is NOT prefixed with `NEXT_PUBLIC_` or `VITE_`
 - [ ] `.env` is in `.gitignore`
-- [ ] Proxy endpoint (if used) has origin allowlist and rate limiting
-- [ ] GitHub PAT uses fine-grained permissions (Issues only, single repo)
+- [ ] If using a proxy, it has origin allowlist and rate limiting
+- [ ] For private repos, consider the proxy pattern to isolate the token
 
 ## 7. Verify
 

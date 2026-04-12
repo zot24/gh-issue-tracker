@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "dependencies": {
+    "gh-issue-tracker": "^1.0.0"
+  },
+  "devDependencies": {
+    "@vercel/node": "^5.0.0",
+    "typescript": "^5.7.0"
+  }
+}

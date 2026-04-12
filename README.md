@@ -53,7 +53,7 @@ try {
 | `githubRepo` | `string` | — | **Required.** Repository in `owner/repo` format |
 | `environment` | `string` | `"development"` | Environment name shown in issue body |
 | `labels` | `string[]` | `[]` | Additional labels applied to every issue |
-| `enabled` | `boolean` | `true` | Kill switch to disable tracking |
+| `enabled` | `boolean` | `true` | Kill switch. Use `enabled: !!process.env.GITHUB_TOKEN` to auto-disable when no token is set (e.g., local dev) |
 | `onError` | `(err) => void` | `console.error` | Called when the GitHub API fails |
 | `rateLimitPerMinute` | `number` | `10` | Max new issues created per minute |
 | `dedupeWindowMs` | `number` | `60000` | Suppress same fingerprint within this window (ms) |
@@ -117,6 +117,7 @@ interface ErrorContext {
 | **Next.js (client errors)** | [`examples/nextjs-error-proxy/`](examples/nextjs-error-proxy/) | Proxy endpoint for browser error boundaries |
 | **Next.js (error UI)** | [`examples/nextjs-error-boundaries/`](examples/nextjs-error-boundaries/) | `error.tsx` and `global-error.tsx` components |
 | **Express** | [`examples/express-middleware/`](examples/express-middleware/) | Error handler middleware |
+| **Standalone proxy** | [`proxy/`](proxy/) | Deploy-once Cloudflare Worker or Vercel Function |
 
 ### Full Next.js setup (recommended)
 
@@ -136,6 +137,43 @@ For complete Next.js coverage, combine all three Next.js examples:
 4. Copy the token and set it as `GITHUB_TOKEN` in your environment
 
 > For classic tokens, the `repo` scope works but grants broader access than needed.
+
+## Security
+
+**The `GITHUB_TOKEN` must NEVER reach the browser.** This token has write access to your repository's issues. If exposed in a client-side JavaScript bundle, anyone can extract it from DevTools and create/modify/close issues in your repo.
+
+### The rule
+
+`gh-issue-tracker` is a **server-side only** package. Never import it in client components, browser code, or any code that gets bundled for the browser.
+
+### Capturing client-side errors safely
+
+Browser errors need a **proxy** between the browser and the GitHub API:
+
+```
+Browser error boundary
+  → POST { message, stack, url } to YOUR server
+  → Your server calls captureException() with GITHUB_TOKEN
+  → GitHub Issues API
+```
+
+Three options for the proxy:
+
+| Option | Best for | Setup |
+|--------|----------|-------|
+| **In-app API route** | Single app, custom logic | [`examples/nextjs-error-proxy/`](examples/nextjs-error-proxy/) |
+| **Cloudflare Worker** | Multi-app, global edge | [`proxy/cloudflare-worker/`](proxy/cloudflare-worker/) |
+| **Vercel Function** | Multi-app, Vercel users | [`proxy/vercel-function/`](proxy/vercel-function/) |
+
+The standalone proxies in `proxy/` are deploy-once solutions — they hold the secret so your apps don't have to.
+
+### Security checklist
+
+- [ ] `GITHUB_TOKEN` is NOT prefixed with `NEXT_PUBLIC_` or `VITE_`
+- [ ] `gh-issue-tracker` is NOT imported in any `'use client'` component
+- [ ] `.env` files are in `.gitignore`
+- [ ] If using client error capture, the proxy has origin allowlist + rate limiting
+- [ ] GitHub PAT uses fine-grained permissions (Issues only, single repo)
 
 ## GitHub Issue structure
 

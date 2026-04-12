@@ -92,3 +92,14 @@ Call `captureException()` directly. In serverless, always `await flush()` before
 - Examples in `examples/` (not part of the npm package)
 - ESM-first (`"type": "module"` in package.json)
 - Build output in `dist/` (ESM + CJS + .d.ts)
+
+## Deployable proxies
+
+The `proxy/` directory contains standalone, deploy-once proxies for capturing client-side errors:
+
+- `proxy/cloudflare-worker/` — Cloudflare Worker (requires `nodejs_compat` flag for `node:crypto`)
+- `proxy/vercel-function/` — Vercel Serverless Function
+
+These hold the `GITHUB_TOKEN` secret and accept POSTs from browser error boundaries. Users deploy one proxy and point all their apps at it — no need to add API routes to every app.
+
+Both proxies include: origin allowlist, IP rate limiting, payload validation, CORS headers.

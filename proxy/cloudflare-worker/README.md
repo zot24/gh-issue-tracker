@@ -2,10 +2,6 @@
 
 A standalone error capture proxy deployed as a Cloudflare Worker. Holds the `GITHUB_TOKEN` secret so your frontend apps never need to.
 
-## Why use this?
-
-Instead of adding an error capture API route to every app, deploy this proxy **once** and point all your error boundaries at it. The Worker holds the GitHub token — your apps just POST error details.
-
 ## Deploy
 
 ```bash
@@ -20,14 +16,16 @@ wrangler secret put GITHUB_REPO     # e.g., myorg/myapp
 wrangler deploy
 ```
 
-## Configure
+## Environment Variables
 
-Edit `wrangler.toml`:
+| Variable | Required | Where to set | Description |
+|----------|----------|-------------|-------------|
+| `GITHUB_TOKEN` | Yes | `wrangler secret put` | GitHub PAT with Issues read/write permission |
+| `GITHUB_REPO` | Yes | `wrangler secret put` | Target repo in `owner/repo` format (e.g., `myorg/myapp`) |
+| `ALLOWED_ORIGINS` | No | `wrangler.toml` [vars] | Comma-separated allowed origins (empty = allow all) |
+| `ENVIRONMENT` | No | `wrangler.toml` [vars] | Environment name shown in issues (default: `"production"`) |
 
-| Variable | Description |
-|----------|-------------|
-| `ALLOWED_ORIGINS` | Comma-separated allowed origins (empty = allow all) |
-| `ENVIRONMENT` | Environment name shown in issues (default: `"production"`) |
+See `.env.example` for a template.
 
 ## Use from error boundaries
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/zot24/gh-issue-tracker/compare/v1.1.2...v1.1.3) (2026-04-12)
+
+
+### Bug Fixes
+
+* normalize repository URL in package.json ([83dced3](https://github.com/zot24/gh-issue-tracker/commit/83dced323fbaeb81f35b7b03febdb845d70b58fd))
+
 ## [1.1.2](https://github.com/zot24/gh-issue-tracker/compare/v1.1.1...v1.1.2) (2026-04-12)
 
 

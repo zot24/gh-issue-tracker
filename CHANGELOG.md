@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.5](https://github.com/zot24/gh-issue-tracker/compare/v1.1.4...v1.1.5) (2026-04-12)
+
+
+### Bug Fixes
+
+* **ci:** remove registry-url to let npm OIDC authenticate natively ([#11](https://github.com/zot24/gh-issue-tracker/issues/11)) ([6a8ed6b](https://github.com/zot24/gh-issue-tracker/commit/6a8ed6b94949e2fa3714dede2fe041c088e7f9ca))
+
 ## [1.1.4](https://github.com/zot24/gh-issue-tracker/compare/v1.1.3...v1.1.4) (2026-04-12)
 
 

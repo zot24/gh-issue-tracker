@@ -77,10 +77,11 @@ See `examples/` for framework-specific integration:
 
 ### Client-side errors (browser)
 
-The GitHub token must **never** reach the browser. Use the proxy pattern:
-1. Error boundaries POST to a server-side endpoint (e.g., `/api/errors/capture`)
-2. The endpoint calls `captureException()` + `flush()` server-side
-3. See `examples/nextjs-error-proxy/` and `examples/nextjs-error-boundaries/`
+The package is server-side only (`node:crypto`), so it cannot be imported in browser code. To capture client-side errors, use one of two approaches:
+
+**Direct mode**: Error boundaries POST to an API route in your app that calls `captureException()`. The token stays in your server environment. See `examples/nextjs-error-proxy/` and `examples/nextjs-error-boundaries/`.
+
+**Proxy mode**: Deploy a standalone proxy (`proxy/cloudflare-worker/` or `proxy/vercel-function/`) that holds the token separately. Browser error boundaries POST directly to the proxy URL. Recommended for private repos or multi-app setups.
 
 ### Server-side errors
 

@@ -64,14 +64,18 @@ Server error  → captureException() directly → GitHub Issues API
 - `GITHUB_TOKEN` **NEVER** reaches the browser
 - Error boundaries in React catch client-side errors and POST to the proxy
 
-### Security Rule (NON-NEGOTIABLE)
+### Security Guidance
 
-**NEVER import `gh-issue-tracker` in client-side / browser code.** The package requires `GITHUB_TOKEN` which has write access to the repository. Exposing it in browser bundles would allow anyone to create/modify issues in your repo.
+The package is **server-side only** (uses `node:crypto`) — it cannot be imported in browser code.
 
-The proxy pattern solves this:
-1. Error boundaries send error details (message, stack, URL) to YOUR API endpoint
-2. Your API endpoint validates the request and calls `captureException()` server-side
-3. The GitHub token never leaves the server
+The token risk depends on your setup:
+- **Fine-grained PAT with Issues-only on a public repo**: Low risk. Someone with the token can create/close issues — same as anyone can do via the GitHub UI on a public repo.
+- **Classic token with `repo` scope or private repo**: Higher risk. Use the proxy pattern to keep the token isolated.
+
+**Proxy pattern** (recommended for private repos or maximum security):
+1. Error boundaries send error details (message, stack, URL) to a proxy endpoint
+2. The proxy validates the request and calls `captureException()` server-side
+3. The GitHub token lives only in the proxy's environment
 
 ---
 
@@ -227,14 +231,13 @@ try {
 | `dedupeWindowMs` | `number` | `60000` | Suppress same fingerprint within this window |
 | `reopenClosed` | `boolean` | `true` | Reopen closed issues on error recurrence |
 
-## Security Checklist
+## Security Recommendations
 
-- [ ] `GITHUB_TOKEN` is set only in server-side environment variables
-- [ ] `GITHUB_TOKEN` is NOT in any client-side env (no `NEXT_PUBLIC_` prefix)
+- [ ] Use a fine-grained PAT scoped to Issues only on a single repo
+- [ ] Don't prefix the token with `NEXT_PUBLIC_` or `VITE_` (these expose to browser bundles)
 - [ ] `.env` files are in `.gitignore`
-- [ ] `gh-issue-tracker` is NOT imported in any client component or browser code
-- [ ] If using client error capture, the proxy endpoint has origin allowlist + rate limiting
-- [ ] GitHub PAT uses fine-grained permissions (Issues only, single repo)
+- [ ] If using a proxy, add origin allowlist + rate limiting
+- [ ] For private repos, use the proxy pattern to isolate the token
 
 ## Common Issues
 
@@ -244,4 +247,4 @@ try {
 | 403 from GitHub API | Token lacks permissions | Ensure Issues read/write on target repo |
 | Duplicate issues | Different stack traces (line numbers changed) | The normalizer handles this — check if the error message itself varies |
 | Rate limited | High error volume | Increase `rateLimitPerMinute` or fix the underlying errors |
-| Token in browser bundle | Imported in client code | NEVER import in client — use the proxy pattern |
+| Token in browser bundle | Env var prefixed with `NEXT_PUBLIC_` or `VITE_` | Remove the prefix — the package is server-side only and doesn't need client exposure |

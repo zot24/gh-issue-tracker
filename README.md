@@ -140,24 +140,26 @@ For complete Next.js coverage, combine all three Next.js examples:
 
 ## Security
 
-**The `GITHUB_TOKEN` must NEVER reach the browser.** This token has write access to your repository's issues. If exposed in a client-side JavaScript bundle, anyone can extract it from DevTools and create/modify/close issues in your repo.
+`gh-issue-tracker` uses a GitHub PAT to create issues. Understanding the token's scope helps you choose the right setup for your project.
 
-### The rule
+### What an Issues-only token can do
 
-`gh-issue-tracker` is a **server-side only** package. Never import it in client components, browser code, or any code that gets bundled for the browser.
+With a fine-grained PAT scoped to Issues read/write on a single repo:
 
-### Capturing client-side errors safely
+| Can do | Cannot do |
+|--------|-----------|
+| Create/edit/close issues | Access or modify code |
+| Add comments and reactions | Read secrets or env vars |
+| Add/remove labels | Merge PRs or push commits |
+| Read issue content | Manage workflows or deployments |
 
-Browser errors need a **proxy** between the browser and the GitHub API:
+For **public repos** that already accept issues from anyone, the write risk is minimal (issue spam at worst). For **private repos**, the read access to issues could expose sensitive internal discussions.
 
-```
-Browser error boundary
-  → POST { message, stack, url } to YOUR server
-  → Your server calls captureException() with GITHUB_TOKEN
-  → GitHub Issues API
-```
+### Two approaches
 
-Three options for the proxy:
+**Direct mode (simpler)** — token stays in server-side env vars (`instrumentation.ts`, Express middleware, etc.). The package is server-side only (`node:crypto`), so there's no way to accidentally import it in browser code. This is fine for most projects, especially public repos with an Issues-only PAT.
+
+**Proxy mode (more secure)** — token lives in a separate proxy service. Browser error boundaries POST error details to the proxy, which calls the GitHub API. The token never exists in your app's environment at all. Recommended for private repos, repos with sensitive issue content, or multi-app setups where you want a single error collection point.
 
 | Option | Best for | Setup |
 |--------|----------|-------|
@@ -165,15 +167,12 @@ Three options for the proxy:
 | **Cloudflare Worker** | Multi-app, global edge | [`proxy/cloudflare-worker/`](proxy/cloudflare-worker/) |
 | **Vercel Function** | Multi-app, Vercel users | [`proxy/vercel-function/`](proxy/vercel-function/) |
 
-The standalone proxies in `proxy/` are deploy-once solutions — they hold the secret so your apps don't have to.
+### Recommendations
 
-### Security checklist
-
-- [ ] `GITHUB_TOKEN` is NOT prefixed with `NEXT_PUBLIC_` or `VITE_`
-- [ ] `gh-issue-tracker` is NOT imported in any `'use client'` component
-- [ ] `.env` files are in `.gitignore`
-- [ ] If using client error capture, the proxy has origin allowlist + rate limiting
-- [ ] GitHub PAT uses fine-grained permissions (Issues only, single repo)
+- Use a **fine-grained PAT** scoped to Issues only on a single repo (not a classic token with `repo` scope)
+- Don't prefix the token with `NEXT_PUBLIC_` or `VITE_` — these expose env vars to the browser bundle
+- Keep `.env` files in `.gitignore`
+- If using a proxy, add origin allowlist + rate limiting to prevent abuse
 
 ## GitHub Issue structure
 

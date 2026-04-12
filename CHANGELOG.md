@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.6](https://github.com/zot24/gh-issue-tracker/compare/v1.1.5...v1.1.6) (2026-04-12)
+
+
+### Bug Fixes
+
+* **ci:** use OIDC publish without NODE_AUTH_TOKEN ([#13](https://github.com/zot24/gh-issue-tracker/issues/13)) ([6923fbb](https://github.com/zot24/gh-issue-tracker/commit/6923fbb5d15f92372fac819a93b33e6570d8b936))
+
 ## [1.1.5](https://github.com/zot24/gh-issue-tracker/compare/v1.1.4...v1.1.5) (2026-04-12)
 
 

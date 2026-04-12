@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.4](https://github.com/zot24/gh-issue-tracker/compare/v1.1.3...v1.1.4) (2026-04-12)
+
+
+### Documentation
+
+* reframe security guidance with two-path approach ([#9](https://github.com/zot24/gh-issue-tracker/issues/9)) ([c05f8f6](https://github.com/zot24/gh-issue-tracker/commit/c05f8f64998d031549c71ac9b378fbd2e98b3067))
+
 ## [1.1.3](https://github.com/zot24/gh-issue-tracker/compare/v1.1.2...v1.1.3) (2026-04-12)
 
 

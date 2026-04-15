@@ -3,8 +3,8 @@
  *
  * Singleton pattern: call `init()` once at startup, then use
  * `captureException()` / `captureMessage()` anywhere in your app.
- * All GitHub API calls are fire-and-forget with `flush()` for
- * serverless environments that need to wait before responding.
+ * All GitHub API calls are fire-and-forget. Call `flush()` in
+ * serverless environments to wait for pending operations before returning.
  */
 
 import type { ErrorTrackerConfig, ErrorContext, GitHubClient } from './types'

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.9](https://github.com/zot24/gh-issue-tracker/compare/v1.1.8...v1.1.9) (2026-04-15)
+
+
+### Bug Fixes
+
+* **ci:** remove NODE_AUTH_TOKEN to use pure OIDC publish and rename CI workflow ([4ec95b0](https://github.com/zot24/gh-issue-tracker/commit/4ec95b0891795f42b4bd291e15eafabdd3cf45d0))
+
 ## [1.1.8](https://github.com/zot24/gh-issue-tracker/compare/v1.1.7...v1.1.8) (2026-04-15)
 
 

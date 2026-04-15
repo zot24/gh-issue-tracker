@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.8](https://github.com/zot24/gh-issue-tracker/compare/v1.1.7...v1.1.8) (2026-04-15)
+
+
+### Bug Fixes
+
+* clarify flush() jsdoc for serverless usage ([8edd40d](https://github.com/zot24/gh-issue-tracker/commit/8edd40d2d1e67fe3d8c0e264e46387f849f86508))
+
 ## [1.1.7](https://github.com/zot24/gh-issue-tracker/compare/v1.1.6...v1.1.7) (2026-04-12)
 
 

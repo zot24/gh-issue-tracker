@@ -1,6 +1,6 @@
 {
   "name": "gh-issue-tracker",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "Lightweight error tracking that creates GitHub Issues instead of sending to SaaS. Deduplication, fingerprinting, and rate limiting built-in.",
   "type": "module",
   "main": "./dist/index.cjs",

@@ -49,4 +49,5 @@ jobs:
 
       - run: pnpm build
 
-      - run: npm publish --provenance --access public
+      - name: Publish to npm with OIDC provenance
+        run: NODE_AUTH_TOKEN="" npm publish --provenance --access public

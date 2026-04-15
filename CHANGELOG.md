@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.11](https://github.com/zot24/gh-issue-tracker/compare/v1.1.10...v1.1.11) (2026-04-15)
+
+
+### Bug Fixes
+
+* **ci:** use Node 24 for npm OIDC publish (requires npm 11.5.0+) ([3c2e5b3](https://github.com/zot24/gh-issue-tracker/commit/3c2e5b36762dee29f85969f3f2359cf14c5c69f2))
+
 ## [1.1.10](https://github.com/zot24/gh-issue-tracker/compare/v1.1.9...v1.1.10) (2026-04-15)
 
 

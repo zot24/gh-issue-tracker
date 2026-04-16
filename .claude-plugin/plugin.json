@@ -1,0 +1,10 @@
+{
+  "name": "gh-issue-tracker",
+  "version": "1.0.0",
+  "description": "Skills for installing and managing gh-issue-tracker — lightweight error tracking via GitHub Issues",
+  "skills": "../.claude/skills/",
+  "commands": "../.claude/commands/",
+  "author": {
+    "name": "zot24"
+  }
+}

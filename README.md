@@ -212,6 +212,33 @@ Two layers:
 - **Dedup window**: Same fingerprint suppressed for 60 seconds (configurable)
 - Cleanup timer is `unref()`'d — never prevents Node.js process exit
 
+## Claude Code plugin
+
+This package includes Claude Code skills that help you install, configure, and manage error tracking. Install it as a plugin to get guided setup directly in your terminal.
+
+### Install the plugin
+
+```bash
+claude plugin add --from npm gh-issue-tracker
+```
+
+### Available skills
+
+| Skill | Trigger | What it does |
+|-------|---------|-------------|
+| `setup-error-tracking` | `/setup-error-tracking` | Guided setup: detects your framework, asks about architecture (server-only vs client+server), installs the package, configures env vars, and adds framework-specific code |
+| `verify-error-tracking` | `/verify-error-tracking` | Verifies your setup: checks token permissions, triggers a test error, confirms issue creation and deduplication |
+| `error-tracker-install` | Automatic — say "add error tracking" | Deep installation guide with security recommendations, proxy patterns, and all configuration options |
+| `github-issue-management` | Automatic — say "manage error issues" | Label taxonomy, triage workflows, bulk operations, and monitoring error volume via reaction counts |
+
+### Example usage
+
+```
+> /setup-error-tracking
+```
+
+Claude will detect your framework, ask whether you need server-only or client+server error capture, and walk you through the full setup.
+
 ## Limitations
 
 - **Node.js only**: Uses `node:crypto` for fingerprinting. Not compatible with browser or edge runtimes.

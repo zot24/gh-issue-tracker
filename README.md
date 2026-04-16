@@ -212,6 +212,25 @@ Two layers:
 - **Dedup window**: Same fingerprint suppressed for 60 seconds (configurable)
 - Cleanup timer is `unref()`'d — never prevents Node.js process exit
 
+## Claude Code plugin
+
+This package includes a [Claude Code](https://claude.com/claude-code) plugin with skills for guided setup and issue management.
+
+### Install the plugin
+
+```bash
+claude plugin add gh-issue-tracker --marketplace zot24/skills
+```
+
+### Available skills
+
+| Skill | Trigger | What it does |
+|-------|---------|-------------|
+| `gh-issue-tracker` | `/gh-issue-tracker` | Guided setup: detects your framework, asks about architecture (server-only vs client+server), installs the package, configures env vars, and adds framework-specific code |
+| `verify-error-tracking` | `/verify-error-tracking` | Verifies your setup: checks token permissions, triggers a test error, confirms issue creation and deduplication |
+
+The skills also trigger automatically when you say things like "add error tracking" or "manage error issues".
+
 ## Limitations
 
 - **Node.js only**: Uses `node:crypto` for fingerprinting. Not compatible with browser or edge runtimes.

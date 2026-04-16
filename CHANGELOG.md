@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/zot24/gh-issue-tracker/compare/v1.1.11...v1.2.0) (2026-04-16)
+
+
+### Features
+
+* move Claude Code skills to zot24/skills marketplace ([#22](https://github.com/zot24/gh-issue-tracker/issues/22)) ([3f87812](https://github.com/zot24/gh-issue-tracker/commit/3f878122d7b26d5528c6f0e8d6e6e7c1332522fe))
+
 ## [1.1.11](https://github.com/zot24/gh-issue-tracker/compare/v1.1.10...v1.1.11) (2026-04-15)
 
 

@@ -218,8 +218,16 @@ This package includes Claude Code skills that help you install, configure, and m
 
 ### Install the plugin
 
+If you use the [zot24/skills](https://github.com/zot24/skills) marketplace:
+
 ```bash
-claude plugin add --from npm gh-issue-tracker
+claude plugin add gh-issue-tracker --marketplace zot24/skills
+```
+
+Or install directly from the skills repo:
+
+```bash
+claude plugin add --from git https://github.com/zot24/skills --path skills/gh-issue-tracker
 ```
 
 ### Available skills

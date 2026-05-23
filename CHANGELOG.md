@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/zot24/gh-issue-tracker/compare/v1.2.0...v1.3.0) (2026-05-23)
+
+
+### Features
+
+* edge-native runtime + built-in user bug reports with screenshots ([#25](https://github.com/zot24/gh-issue-tracker/issues/25)) ([c949f84](https://github.com/zot24/gh-issue-tracker/commit/c949f84b2cbd1869b3633be845e6f3872299c5a6))
+
 ## [1.2.0](https://github.com/zot24/gh-issue-tracker/compare/v1.1.11...v1.2.0) (2026-04-16)
 
 

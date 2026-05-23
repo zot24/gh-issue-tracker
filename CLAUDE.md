@@ -13,11 +13,11 @@ src/
 ├── index.ts          Public barrel: init, captureException, captureMessage, flush + types
 ├── types.ts          All TypeScript interfaces (ErrorTrackerConfig, ErrorContext, etc.)
 ├── client.ts         Singleton orchestrator — manages pending promises, coordinates dedup + GitHub
-├── github.ts         Octokit wrapper (search, create issue, add reaction, reopen). Never throws.
-├── fingerprint.ts    SHA-256 hash of error name + truncated message + normalized top 3 stack frames
+├── github.ts         fetch-based GitHub REST client (search, create issue, add reaction, reopen). No SDK dep. Never throws.
+├── fingerprint.ts    SHA-256 (Web Crypto) hash of error name + truncated message + normalized top 3 stack frames
 ├── normalizer.ts     Strips line:col numbers, webpack hashes, query strings from stack traces
 ├── rate-limiter.ts   Sliding window (N/min) + dedup window (fingerprint suppression)
-└── __tests__/        38 unit tests (client, github, fingerprint, normalizer, rate-limiter)
+└── __tests__/        40 unit tests (client, github, fingerprint, normalizer, rate-limiter)
 ```
 
 ### Key design decisions
@@ -26,7 +26,7 @@ src/
 - **Dedup strategy**: Search issues by fingerprint label. Open issue → add reaction. Closed → reopen + comment. Not found → create new.
 - **Rate limiter unref**: Cleanup timer is `unref()`'d so it never prevents Node.js process exit.
 - **GitHub client never throws**: All methods catch errors internally and call `onError`. The tracker never crashes the host application.
-- **Node.js only**: Uses `node:crypto` for SHA-256. Not compatible with browser/edge runtimes (by design — the GitHub token must stay server-side).
+- **Runtime-agnostic, zero deps**: SHA-256 via Web Crypto (`crypto.subtle`) and a `fetch`-based GitHub client — no `node:crypto`, no SDK. Runs on Node 20+, edge functions, Cloudflare Workers, and Deno. Still server-side by design (the token must stay server-side), but "server-side" now includes edge runtimes. `generateFingerprint` is async because Web Crypto's `digest` is async — it runs inside the fire-and-forget promise, so the public `captureException`/`captureMessage` API still returns `void`.
 
 ### Error flow
 
@@ -47,14 +47,14 @@ Error thrown → captureException(error, context?)
 ```bash
 pnpm install        # install dependencies
 pnpm build          # build ESM + CJS + .d.ts via tsup
-pnpm test           # run all 38 tests with vitest
+pnpm test           # run all 40 tests with vitest
 pnpm type-check     # tsc --noEmit
 ```
 
 ## Testing conventions
 
 - Vitest with `globals: true`, `environment: 'node'`
-- Mock `octokit` at module level with `vi.mock('octokit', ...)`
+- Mock the global `fetch` with `vi.stubGlobal('fetch', mockFetch)` (the GitHub client uses `fetch` directly)
 - Use `_reset()` (internal export) between tests to clear singleton state
 - Use `vi.useFakeTimers()` for rate-limiter time-dependent tests
 - Tests are co-located in `src/__tests__/`
@@ -77,7 +77,7 @@ See `examples/` for framework-specific integration:
 
 ### Client-side errors (browser)
 
-The package is server-side only (`node:crypto`), so it cannot be imported in browser code. To capture client-side errors, use one of two approaches:
+The package needs the GitHub token, so it must run server-side (don't import it in client bundles), but it runs on any server runtime — Node 20+, edge, or Workers. To capture client-side (browser) errors, use one of two approaches:
 
 **Direct mode**: Error boundaries POST to an API route in your app that calls `captureException()`. The token stays in your server environment. See `examples/nextjs-error-proxy/` and `examples/nextjs-error-boundaries/`.
 
@@ -98,7 +98,7 @@ Call `captureException()` directly. In serverless, always `await flush()` before
 
 The `proxy/` directory contains standalone, deploy-once proxies for capturing client-side errors:
 
-- `proxy/cloudflare-worker/` — Cloudflare Worker (requires `nodejs_compat` flag for `node:crypto`)
+- `proxy/cloudflare-worker/` — Cloudflare Worker (no `nodejs_compat` needed — the package is edge-native via Web Crypto + `fetch`)
 - `proxy/vercel-function/` — Vercel Serverless Function
 
 These hold the `GITHUB_TOKEN` secret and accept POSTs from browser error boundaries. Users deploy one proxy and point all their apps at it — no need to add API routes to every app.

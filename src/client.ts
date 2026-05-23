@@ -61,16 +61,20 @@ export function init(cfg: ErrorTrackerConfig): void {
 export function captureException(error: Error, context?: ErrorContext): void {
   if (!config?.enabled || !github || !limiter) return
 
-  const fingerprint = generateFingerprint(error)
+  // Fingerprinting is async (Web Crypto), so it runs inside the fire-and-forget
+  // promise; flush() still awaits the whole chain.
+  const lim = limiter
+  const promise = (async () => {
+    const fingerprint = await generateFingerprint(error)
 
-  if (!limiter.canProcess(fingerprint)) {
-    console.error(`[error-tracker] Rate limited or deduped: ${fingerprint}`)
-    return
-  }
+    if (!lim.canProcess(fingerprint)) {
+      console.error(`[error-tracker] Rate limited or deduped: ${fingerprint}`)
+      return
+    }
+    lim.recordProcessed(fingerprint)
 
-  limiter.recordProcessed(fingerprint)
-
-  const promise = processError(error, fingerprint, context).catch((err) => {
+    await processError(error, fingerprint, context)
+  })().catch((err) => {
     config?.onError?.(err)
   })
 
@@ -87,30 +91,31 @@ export function captureMessage(
 ): void {
   if (!config?.enabled || !github || !limiter) return
 
-  const fingerprint = generateFingerprint(message)
+  const gh = github
+  const lim = limiter
+  const promise = (async () => {
+    const fingerprint = await generateFingerprint(message)
 
-  if (!limiter.canProcess(fingerprint)) return
+    if (!lim.canProcess(fingerprint)) return
+    lim.recordProcessed(fingerprint)
 
-  limiter.recordProcessed(fingerprint)
+    const title = `[${level === 'warning' ? 'Warning' : 'Error'}] ${message.slice(0, 80)}`
+    const body = formatBody(message, undefined, fingerprint, context)
+    const labels = buildLabels(fingerprint)
 
-  const title = `[${level === 'warning' ? 'Warning' : 'Error'}] ${message.slice(0, 80)}`
-  const body = formatBody(message, undefined, fingerprint, context)
-  const labels = buildLabels(fingerprint)
-
-  const promise = github.searchExistingIssue(fingerprint).then(async (existing) => {
-    if (!github) return
+    const existing = await gh.searchExistingIssue(fingerprint)
 
     if (existing?.state === 'open') {
-      await github.addReaction(existing.number)
+      await gh.addReaction(existing.number)
     } else if (existing?.state === 'closed') {
       if (config?.reopenClosed) {
-        await github.reopenIssue(existing.number, recurrenceComment())
-        await github.addReaction(existing.number)
+        await gh.reopenIssue(existing.number, recurrenceComment())
+        await gh.addReaction(existing.number)
       }
     } else {
-      await github.createIssue(title, body, labels)
+      await gh.createIssue(title, body, labels)
     }
-  }).catch((err) => {
+  })().catch((err) => {
     config?.onError?.(err)
   })
 

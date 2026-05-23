@@ -49,8 +49,7 @@ fetch('https://gh-error-proxy.YOUR-SUBDOMAIN.workers.dev', {
 ## Requirements
 
 - Cloudflare account (free tier works)
-- `nodejs_compat` compatibility flag (enabled in wrangler.toml)
-- `gh-issue-tracker` package (bundled into the Worker)
+- `gh-issue-tracker` package (bundled into the Worker) — edge-native, no `nodejs_compat` flag required
 
 ## Security
 

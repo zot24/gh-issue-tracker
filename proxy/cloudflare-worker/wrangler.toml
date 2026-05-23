@@ -1,7 +1,7 @@
 name = "gh-error-proxy"
 main = "worker.ts"
 compatibility_date = "2024-12-01"
-compatibility_flags = ["nodejs_compat"]
+# No nodejs_compat needed — gh-issue-tracker is edge-native (Web Crypto + fetch).
 
 # Secrets (set via `wrangler secret put`):
 #   GITHUB_TOKEN  — GitHub PAT with Issues read/write

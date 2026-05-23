@@ -1,12 +1,12 @@
 /**
  * GitHub API layer for error tracking.
  *
- * All methods catch errors internally and delegate to `onError` —
- * they never throw. This ensures the error tracker itself never
- * crashes the host application.
+ * A tiny `fetch`-based GitHub REST client — no SDK dependency, so it runs on any
+ * runtime with a global `fetch` (Node 20+, edge functions, Cloudflare Workers,
+ * Deno). All methods catch errors internally and delegate to `onError`; they
+ * never throw, so the tracker can never crash the host application.
  */
 
-import { Octokit } from 'octokit'
 import type { GitHubClient, ExistingIssue } from './types'
 
 export interface GitHubClientConfig {
@@ -14,6 +14,8 @@ export interface GitHubClientConfig {
   repo: string // "owner/repo"
   onError: (err: unknown) => void
 }
+
+const API_BASE = 'https://api.github.com'
 
 function parseRepo(repo: string): { owner: string; repo: string } {
   const [owner, name] = repo.split('/')
@@ -24,21 +26,49 @@ function parseRepo(repo: string): { owner: string; repo: string } {
 }
 
 export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
-  const octokit = new Octokit({ auth: config.token })
   const { owner, repo } = parseRepo(config.repo)
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${config.token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    // GitHub rejects requests without a User-Agent.
+    'User-Agent': 'gh-issue-tracker',
+    'Content-Type': 'application/json',
+  }
+
+  async function request(method: string, path: string, body?: unknown): Promise<unknown> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      throw new Error(
+        `GitHub ${method} ${path} failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
+      )
+    }
+
+    if (res.status === 204) return null
+    return res.json().catch(() => null)
+  }
 
   return {
     async searchExistingIssue(fingerprint: string): Promise<ExistingIssue | null> {
       try {
-        const { data } = await octokit.rest.issues.listForRepo({
-          owner,
-          repo,
+        const query = new URLSearchParams({
           labels: `fingerprint:${fingerprint}`,
           state: 'all',
-          per_page: 1,
+          per_page: '1',
         })
+        const data = (await request(
+          'GET',
+          `/repos/${owner}/${repo}/issues?${query.toString()}`,
+        )) as Array<{ number: number; state: string; title: string }> | null
 
-        const issue = data[0]
+        const issue = data?.[0]
         if (!issue) return null
 
         return {
@@ -54,14 +84,12 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
 
     async createIssue(title: string, body: string, labels: string[]): Promise<number | null> {
       try {
-        const { data } = await octokit.rest.issues.create({
-          owner,
-          repo,
+        const data = (await request('POST', `/repos/${owner}/${repo}/issues`, {
           title,
           body,
           labels,
-        })
-        return data.number
+        })) as { number: number } | null
+        return data?.number ?? null
       } catch (err) {
         config.onError(err)
         return null
@@ -70,10 +98,7 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
 
     async addReaction(issueNumber: number): Promise<void> {
       try {
-        await octokit.rest.reactions.createForIssue({
-          owner,
-          repo,
-          issue_number: issueNumber,
+        await request('POST', `/repos/${owner}/${repo}/issues/${issueNumber}/reactions`, {
           content: '+1',
         })
       } catch (err) {
@@ -83,16 +108,10 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
 
     async reopenIssue(issueNumber: number, comment: string): Promise<void> {
       try {
-        await octokit.rest.issues.update({
-          owner,
-          repo,
-          issue_number: issueNumber,
+        await request('PATCH', `/repos/${owner}/${repo}/issues/${issueNumber}`, {
           state: 'open',
         })
-        await octokit.rest.issues.createComment({
-          owner,
-          repo,
-          issue_number: issueNumber,
+        await request('POST', `/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
           body: comment,
         })
       } catch (err) {

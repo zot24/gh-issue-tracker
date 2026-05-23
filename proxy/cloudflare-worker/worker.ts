@@ -15,7 +15,8 @@
  *   5. wrangler secret put GITHUB_REPO
  *   6. wrangler deploy
  *
- * Requires: nodejs_compat compatibility flag (for node:crypto)
+ * Runs natively on the Workers runtime — gh-issue-tracker uses Web Crypto and
+ * fetch, so no nodejs_compat flag is required.
  */
 
 import { init, captureException, flush } from 'gh-issue-tracker'

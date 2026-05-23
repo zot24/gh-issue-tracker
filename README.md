@@ -9,6 +9,7 @@ Lightweight error tracking that creates GitHub Issues instead of sending to SaaS
 - **Fingerprinting** — stable error identity across deploys (line number changes don't matter)
 - **Rate limiting** — prevents GitHub API spam during error storms
 - **Simple API** — `init()` once, `captureException()` anywhere
+- **Runs anywhere** — zero runtime dependencies; works on Node 20+, edge functions, Cloudflare Workers, and Deno (Web Crypto + `fetch`)
 
 ## How it works
 
@@ -157,7 +158,7 @@ For **public repos** that already accept issues from anyone, the write risk is m
 
 ### Two approaches
 
-**Direct mode (simpler)** — token stays in server-side env vars (`instrumentation.ts`, Express middleware, etc.). The package is server-side only (`node:crypto`), so there's no way to accidentally import it in browser code. This is fine for most projects, especially public repos with an Issues-only PAT.
+**Direct mode (simpler)** — token stays in server-side env vars (`instrumentation.ts`, Express middleware, edge route, etc.). The package runs on any server runtime (Node 20+, edge, Workers) — keep the token in server-side env and never import it from client bundles. This is fine for most projects, especially public repos with an Issues-only PAT.
 
 **Proxy mode (more secure)** — token lives in a separate proxy service. Browser error boundaries POST error details to the proxy, which calls the GitHub API. The token never exists in your app's environment at all. Recommended for private repos, repos with sensitive issue content, or multi-app setups where you want a single error collection point.
 
@@ -233,7 +234,7 @@ The skills also trigger automatically when you say things like "add error tracki
 
 ## Limitations
 
-- **Node.js only**: Uses `node:crypto` for fingerprinting. Not compatible with browser or edge runtimes.
+- **Server-side by design**: It needs the GitHub token, so run it server-side — but "server-side" includes Node 20+, edge functions, Cloudflare Workers, and Deno (it uses Web Crypto + `fetch`, no Node-only APIs). Capture browser errors via a proxy (see [`proxy/`](proxy/)).
 - **No session replay**: Unlike Sentry, there's no UI recording for debugging.
 - **No performance tracing**: No APM, transaction monitoring, or request timing.
 - **GitHub API rate limits**: 5,000 requests/hour for authenticated tokens. The in-memory rate limiter prevents hitting this in practice.
@@ -241,7 +242,8 @@ The skills also trigger automatically when you say things like "add error tracki
 
 ## Requirements
 
-- Node.js >= 18
+- A runtime with global `fetch` and Web Crypto — Node.js 20+, edge functions, Cloudflare Workers, or Deno
+- Zero runtime dependencies
 - GitHub PAT with Issues read/write permission
 
 ## License

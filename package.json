@@ -37,9 +37,6 @@
   "engines": {
     "node": ">=20"
   },
-  "dependencies": {
-    "octokit": "^4.1.2"
-  },
   "devDependencies": {
     "@types/node": "^22.9.0",
     "tsup": "^8.0.0",

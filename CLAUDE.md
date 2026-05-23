@@ -1,6 +1,119 @@
 # gh-issue-tracker
 
-Lightweight error tracking that creates GitHub Issues. No SaaS dependency. Deduplication, fingerprinting, and rate limiting built-in.
+Lightweight error tracking **and user bug reports** that create GitHub Issues. No SaaS dependency. Deduplication, fingerprinting, rate limiting, and screenshot capture built-in. Runtime-agnostic (Node 20+, edge, Workers, Deno) with zero required runtime dependencies.
+
+## Setup guide (for consumers)
+
+Everything below ships in the package by default — install once and wire the glue.
+
+### 1. Install
+
+```bash
+npm install gh-issue-tracker
+# Only if you want client-side screenshots (optional peer dep):
+npm install modern-screenshot
+```
+
+### 2. Environment variables
+
+```env
+GITHUB_TOKEN=github_pat_xxx     # fine-grained PAT (scopes below)
+GITHUB_REPO=owner/repo          # where issues are created
+# Optional — required for screenshots on PRIVATE repos:
+APP_BASE_URL=https://yourapp.com
+```
+
+**Token scopes (fine-grained PAT on the target repo):**
+- **Issues: Read and write** — always required.
+- **Contents: Read and write** — required ONLY for bug-report screenshots (they're committed to a `bug-report-screenshots` branch).
+
+Without `GITHUB_TOKEN`, gate with `enabled: !!process.env.GITHUB_TOKEN` so local dev is a no-op.
+
+### 3. Server: automatic error tracking
+
+```ts
+import { init, captureException, flush } from 'gh-issue-tracker'
+
+init({
+  githubToken: process.env.GITHUB_TOKEN!,
+  githubRepo: process.env.GITHUB_REPO!,
+  environment: process.env.NODE_ENV,
+  enabled: !!process.env.GITHUB_TOKEN,
+})
+
+try { risky() } catch (e) {
+  captureException(e instanceof Error ? e : new Error(String(e)))
+  await flush() // wait before a serverless function returns
+}
+```
+
+Framework wiring (Next.js `instrumentation.ts` + `onRequestError`, Express middleware) lives in [`examples/`](examples/). Note: `init()` reads config from its argument, not env, so call it once at startup. The package is edge-safe; if your routes use the edge runtime, see the edge note in the Next.js example.
+
+### 4. Server: user bug reports with screenshots
+
+`captureBugReport` creates a richly-formatted issue and (optionally) commits a screenshot, embedding it in the body. Unlike `captureException`, it awaits and returns the created issue.
+
+```ts
+// POST /api/bug-reports  (Node.js runtime — multipart form)
+import { captureBugReport } from 'gh-issue-tracker'
+
+const form = await request.formData()
+const file = form.get('screenshot')
+const result = await captureBugReport({
+  message: String(form.get('message')),
+  pageUrl: String(form.get('pageUrl')),
+  reporter: { id: user.id, email: user.email, name: user.name, role: user.role },
+  pin: /* { x, y } from form, optional */ undefined,
+  metadata: { viewport: `${form.get('viewportWidth')} × ${form.get('viewportHeight')}`, userAgent: String(form.get('userAgent')) },
+  screenshot: file instanceof File
+    ? { data: new Uint8Array(await file.arrayBuffer()), filename: file.name }
+    : undefined,
+})
+// → { issueNumber, issueUrl, screenshotUrl } | null
+```
+
+### 5. Server: screenshot proxy route (private repos)
+
+Private-repo images can't be hot-linked, so serve them through `fetchIssueImage`:
+
+```ts
+// GET /api/bug-screenshots/[...path]  (Node.js runtime)
+import { fetchIssueImage } from 'gh-issue-tracker'
+
+const r = await fetchIssueImage({
+  token: process.env.GITHUB_TOKEN!,
+  repo: process.env.GITHUB_REPO!,
+  path: params.path.join('/'),
+})
+if (r.status !== 200) return new Response(null, { status: r.status })
+return new Response(r.body, {
+  headers: { 'Content-Type': r.contentType!, 'Cache-Control': 'public, max-age=31536000, immutable' },
+})
+```
+
+Set `appBaseUrl` in `init()` (and `screenshotProxyPath` if not the default `api/bug-screenshots`) so the embedded image URL points here.
+
+### 6. Client: screenshot + submit helpers
+
+Import from the `gh-issue-tracker/browser` subpath (keeps the server bundle dependency-free):
+
+```ts
+import { captureScreenshot, submitBugReport } from 'gh-issue-tracker/browser'
+
+// Captures the page (incl. open modals); hides [data-bug-report]/[data-pin-overlay].
+const shot = await captureScreenshot()
+
+const res = await submitBugReport({
+  endpoint: '/api/bug-reports',
+  message,
+  screenshot: shot?.file,
+  pin,                       // optional { x, y } as % of viewport
+  fetchInit: { credentials: 'include' },
+})
+// → { ok, status, issueNumber, issueUrl, error }
+```
+
+Build your own button/dialog UI around these (a pin-to-locate overlay is a nice touch). Mark a capture root with `data-screenshot-target` to scope the screenshot; otherwise it captures `document.body`.
 
 ## Architecture
 
@@ -10,14 +123,17 @@ Lightweight error tracking that creates GitHub Issues. No SaaS dependency. Dedup
 
 ```
 src/
-├── index.ts          Public barrel: init, captureException, captureMessage, flush + types
-├── types.ts          All TypeScript interfaces (ErrorTrackerConfig, ErrorContext, etc.)
-├── client.ts         Singleton orchestrator — manages pending promises, coordinates dedup + GitHub
-├── github.ts         Octokit wrapper (search, create issue, add reaction, reopen). Never throws.
-├── fingerprint.ts    SHA-256 hash of error name + truncated message + normalized top 3 stack frames
+├── index.ts          Server barrel (gh-issue-tracker): init, captureException, captureMessage, captureBugReport, flush, fetchIssueImage + types
+├── browser.ts        Client barrel (gh-issue-tracker/browser): captureScreenshot, submitBugReport, buildBugReportFormData
+├── types.ts          All TypeScript interfaces (config, ErrorContext, BugReport*, FetchIssueImage*)
+├── client.ts         Singleton orchestrator — error dedup + captureBugReport (upload screenshot → create issue)
+├── github.ts         fetch-based GitHub REST client (search/create issue, reaction, reopen, uploadImage). No SDK dep. Never throws.
+├── bug-report.ts     Pure helpers: base64 encode, screenshot path, issue body formatting
+├── screenshot.ts     fetchIssueImage — read-through proxy for private-repo screenshots
+├── fingerprint.ts    SHA-256 (Web Crypto) hash of error name + truncated message + normalized top 3 stack frames
 ├── normalizer.ts     Strips line:col numbers, webpack hashes, query strings from stack traces
 ├── rate-limiter.ts   Sliding window (N/min) + dedup window (fingerprint suppression)
-└── __tests__/        38 unit tests (client, github, fingerprint, normalizer, rate-limiter)
+└── __tests__/        52 unit tests (client, github, fingerprint, normalizer, rate-limiter, screenshot)
 ```
 
 ### Key design decisions
@@ -26,7 +142,7 @@ src/
 - **Dedup strategy**: Search issues by fingerprint label. Open issue → add reaction. Closed → reopen + comment. Not found → create new.
 - **Rate limiter unref**: Cleanup timer is `unref()`'d so it never prevents Node.js process exit.
 - **GitHub client never throws**: All methods catch errors internally and call `onError`. The tracker never crashes the host application.
-- **Node.js only**: Uses `node:crypto` for SHA-256. Not compatible with browser/edge runtimes (by design — the GitHub token must stay server-side).
+- **Runtime-agnostic, zero deps**: SHA-256 via Web Crypto (`crypto.subtle`) and a `fetch`-based GitHub client — no `node:crypto`, no SDK. Runs on Node 20+, edge functions, Cloudflare Workers, and Deno. Still server-side by design (the token must stay server-side), but "server-side" now includes edge runtimes. `generateFingerprint` is async because Web Crypto's `digest` is async — it runs inside the fire-and-forget promise, so the public `captureException`/`captureMessage` API still returns `void`.
 
 ### Error flow
 
@@ -47,14 +163,14 @@ Error thrown → captureException(error, context?)
 ```bash
 pnpm install        # install dependencies
 pnpm build          # build ESM + CJS + .d.ts via tsup
-pnpm test           # run all 38 tests with vitest
+pnpm test           # run all 40 tests with vitest
 pnpm type-check     # tsc --noEmit
 ```
 
 ## Testing conventions
 
 - Vitest with `globals: true`, `environment: 'node'`
-- Mock `octokit` at module level with `vi.mock('octokit', ...)`
+- Mock the global `fetch` with `vi.stubGlobal('fetch', mockFetch)` (the GitHub client uses `fetch` directly)
 - Use `_reset()` (internal export) between tests to clear singleton state
 - Use `vi.useFakeTimers()` for rate-limiter time-dependent tests
 - Tests are co-located in `src/__tests__/`
@@ -77,7 +193,7 @@ See `examples/` for framework-specific integration:
 
 ### Client-side errors (browser)
 
-The package is server-side only (`node:crypto`), so it cannot be imported in browser code. To capture client-side errors, use one of two approaches:
+The package needs the GitHub token, so it must run server-side (don't import it in client bundles), but it runs on any server runtime — Node 20+, edge, or Workers. To capture client-side (browser) errors, use one of two approaches:
 
 **Direct mode**: Error boundaries POST to an API route in your app that calls `captureException()`. The token stays in your server environment. See `examples/nextjs-error-proxy/` and `examples/nextjs-error-boundaries/`.
 
@@ -98,7 +214,7 @@ Call `captureException()` directly. In serverless, always `await flush()` before
 
 The `proxy/` directory contains standalone, deploy-once proxies for capturing client-side errors:
 
-- `proxy/cloudflare-worker/` — Cloudflare Worker (requires `nodejs_compat` flag for `node:crypto`)
+- `proxy/cloudflare-worker/` — Cloudflare Worker (no `nodejs_compat` needed — the package is edge-native via Web Crypto + `fetch`)
 - `proxy/vercel-function/` — Vercel Serverless Function
 
 These hold the `GITHUB_TOKEN` secret and accept POSTs from browser error boundaries. Users deploy one proxy and point all their apps at it — no need to add API routes to every app.

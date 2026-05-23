@@ -7,14 +7,24 @@ const mockGitHubClient: GitHubClient = {
   createIssue: vi.fn(),
   addReaction: vi.fn(),
   reopenIssue: vi.fn(),
+  uploadImage: vi.fn(),
 }
+
+const ISSUE = { number: 123, url: 'https://github.com/owner/repo/issues/123' }
 
 vi.mock('../github', () => ({
   createGitHubClient: vi.fn(() => mockGitHubClient),
 }))
 
 // Import after mocks are set up
-import { init, captureException, captureMessage, flush, _reset } from '../client'
+import {
+  init,
+  captureException,
+  captureMessage,
+  captureBugReport,
+  flush,
+  _reset,
+} from '../client'
 
 describe('ErrorTrackerClient', () => {
   beforeEach(() => {
@@ -44,7 +54,7 @@ describe('ErrorTrackerClient', () => {
   describe('captureException', () => {
     it('creates a new GitHub issue for an unseen error', async () => {
       vi.mocked(mockGitHubClient.searchExistingIssue).mockResolvedValue(null)
-      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(123)
+      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
 
       initTracker()
       captureException(new Error('New error'))
@@ -121,7 +131,7 @@ describe('ErrorTrackerClient', () => {
 
     it('includes context tags in the issue body', async () => {
       vi.mocked(mockGitHubClient.searchExistingIssue).mockResolvedValue(null)
-      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(1)
+      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
 
       initTracker()
       captureException(new Error('Tagged error'), {
@@ -139,7 +149,7 @@ describe('ErrorTrackerClient', () => {
   describe('captureMessage', () => {
     it('creates an issue from a plain message', async () => {
       vi.mocked(mockGitHubClient.searchExistingIssue).mockResolvedValue(null)
-      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(1)
+      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
 
       initTracker()
       captureMessage('Something unusual happened', 'warning')
@@ -150,6 +160,67 @@ describe('ErrorTrackerClient', () => {
         expect.stringContaining('Something unusual happened'),
         expect.arrayContaining(['error-report'])
       )
+    })
+  })
+
+  describe('captureBugReport', () => {
+    it('creates a bug-report issue and returns the issue ref', async () => {
+      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
+
+      initTracker()
+      const result = await captureBugReport({
+        message: 'The save button does nothing on the bookings page',
+        pageUrl: 'https://app.example.com/bookings',
+        reporter: { id: 'u1', name: 'Dewi', role: 'host' },
+        metadata: { viewport: '1440 × 900' },
+      })
+
+      expect(mockGitHubClient.createIssue).toHaveBeenCalledWith(
+        expect.stringContaining('[Bug Report]'),
+        expect.stringContaining('save button'),
+        expect.arrayContaining(['bug-report'])
+      )
+      // No screenshot provided → no upload.
+      expect(mockGitHubClient.uploadImage).not.toHaveBeenCalled()
+      expect(result).toEqual({
+        issueNumber: 123,
+        issueUrl: ISSUE.url,
+        screenshotUrl: undefined,
+      })
+    })
+
+    it('uploads a screenshot and embeds the proxy URL when appBaseUrl is set', async () => {
+      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
+      vi.mocked(mockGitHubClient.uploadImage).mockResolvedValue(true)
+
+      initTracker({ appBaseUrl: 'https://app.example.com' })
+      const result = await captureBugReport({
+        message: 'Layout breaks in the export modal when the list is long',
+        pageUrl: 'https://app.example.com/expenses',
+        reporter: { id: 'u1' },
+        screenshot: { data: new Uint8Array([65, 66, 67]), filename: 'screenshot.png' },
+      })
+
+      expect(mockGitHubClient.uploadImage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          branch: 'bug-report-screenshots',
+          base64Content: 'QUJD', // base64("ABC")
+        })
+      )
+      const body = vi.mocked(mockGitHubClient.createIssue).mock.calls[0]?.[1]
+      expect(body).toContain('![Screenshot](https://app.example.com/api/bug-screenshots/')
+      expect(result?.screenshotUrl).toContain('https://app.example.com/api/bug-screenshots/')
+    })
+
+    it('returns null when disabled', async () => {
+      initTracker({ enabled: false })
+      const result = await captureBugReport({
+        message: 'x'.repeat(60),
+        pageUrl: 'https://app.example.com/',
+        reporter: { id: 'u1' },
+      })
+      expect(result).toBeNull()
+      expect(mockGitHubClient.createIssue).not.toHaveBeenCalled()
     })
   })
 

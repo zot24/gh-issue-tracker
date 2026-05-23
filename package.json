@@ -1,7 +1,7 @@
 {
   "name": "gh-issue-tracker",
   "version": "1.2.0",
-  "description": "Lightweight error tracking that creates GitHub Issues instead of sending to SaaS. Deduplication, fingerprinting, and rate limiting built-in.",
+  "description": "Lightweight error tracking and user bug reports that create GitHub Issues instead of sending to SaaS. Screenshot capture, deduplication, fingerprinting, and rate limiting built-in. Edge-native, zero deps.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "require": "./dist/browser.cjs"
     }
   },
   "files": [
@@ -29,19 +34,28 @@
     "error-tracking",
     "github-issues",
     "error-reporter",
+    "bug-report",
+    "screenshot",
     "sentry-alternative",
     "fingerprinting",
-    "deduplication"
+    "deduplication",
+    "edge"
   ],
   "license": "MIT",
   "engines": {
     "node": ">=20"
   },
-  "dependencies": {
-    "octokit": "^4.1.2"
+  "peerDependencies": {
+    "modern-screenshot": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "modern-screenshot": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
+    "modern-screenshot": "^4.7.0",
     "tsup": "^8.0.0",
     "typescript": "^5.7.2",
     "vitest": "^4.0.16"

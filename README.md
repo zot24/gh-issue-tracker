@@ -9,6 +9,7 @@ Lightweight error tracking that creates GitHub Issues instead of sending to SaaS
 - **Fingerprinting** — stable error identity across deploys (line number changes don't matter)
 - **Rate limiting** — prevents GitHub API spam during error storms
 - **Simple API** — `init()` once, `captureException()` anywhere
+- **Runs anywhere** — zero runtime dependencies; works on Node 20+, edge functions, Cloudflare Workers, and Deno (Web Crypto + `fetch`)
 
 ## How it works
 
@@ -97,6 +98,18 @@ captureException(error)
 await flush() // don't return until the GitHub API call finishes
 ```
 
+### `captureBugReport(input: BugReportInput): Promise<BugReportResult | null>`
+
+Create a GitHub issue from a user bug report, optionally committing + embedding a screenshot. Awaits and returns `{ issueNumber, issueUrl, screenshotUrl }`. See [Bug reports](#bug-reports-with-screenshots).
+
+### `fetchIssueImage(opts): Promise<{ status, body?, contentType? }>`
+
+Read-through proxy that streams a committed screenshot using the token — wrap it in a Response at your `/api/bug-screenshots/[...path]` route so private-repo images render.
+
+### Browser entry — `gh-issue-tracker/browser`
+
+`captureScreenshot(options?)`, `submitBugReport(input)`, and `buildBugReportFormData(input)` for the client side. Requires the optional `modern-screenshot` peer dependency.
+
 ### `ErrorContext`
 
 ```ts
@@ -127,6 +140,41 @@ For complete Next.js coverage, combine all three Next.js examples:
 2. **Client errors**: Error boundaries catch React errors and POST to the proxy
 3. **Proxy**: Server-side endpoint receives client errors and reports them (keeps token safe)
 
+## Bug reports (with screenshots)
+
+Beyond automatic error capture, the package can turn a **user-submitted bug report** into a GitHub issue — with a screenshot, a pin location, and environment metadata.
+
+**Client** (`gh-issue-tracker/browser`, needs the optional `modern-screenshot` peer dep):
+
+```ts
+import { captureScreenshot, submitBugReport } from 'gh-issue-tracker/browser'
+
+const shot = await captureScreenshot()       // captures the page, incl. open modals
+const res = await submitBugReport({
+  endpoint: '/api/bug-reports',
+  message,
+  screenshot: shot?.file,
+  pin,                                        // optional { x, y } as % of viewport
+})
+// → { ok, status, issueNumber, issueUrl, error }
+```
+
+Build your own button/dialog around these helpers. Add `data-screenshot-target` to scope the capture; mark your widget `data-bug-report` so it's hidden from the shot.
+
+**Server** — your API route calls `captureBugReport`, which commits the screenshot to a `bug-report-screenshots` branch and embeds it in the issue:
+
+```ts
+import { captureBugReport } from 'gh-issue-tracker'
+
+const result = await captureBugReport({
+  message, pageUrl,
+  reporter: { id, email, name, role },
+  screenshot: file ? { data: new Uint8Array(await file.arrayBuffer()), filename: file.name } : undefined,
+})
+```
+
+For **private repos**, set `appBaseUrl` in `init()` and serve `fetchIssueImage()` at `/api/bug-screenshots/[...path]` so the committed image renders in the issue (raw URLs 404 anonymously on private repos). Full wiring is in [CLAUDE.md](CLAUDE.md#setup-guide-for-consumers).
+
 ## GitHub token setup
 
 1. Go to **GitHub → Settings → Developer settings → Fine-grained personal access tokens**
@@ -134,6 +182,7 @@ For complete Next.js coverage, combine all three Next.js examples:
 3. Set:
    - **Repository access**: Only select repositories → choose your target repo
    - **Permissions**: Issues → Read and write
+   - **Permissions**: Contents → Read and write *(only if you use bug-report screenshots — they're committed to a branch)*
 4. Copy the token and set it as `GITHUB_TOKEN` in your environment
 
 > For classic tokens, the `repo` scope works but grants broader access than needed.
@@ -157,7 +206,7 @@ For **public repos** that already accept issues from anyone, the write risk is m
 
 ### Two approaches
 
-**Direct mode (simpler)** — token stays in server-side env vars (`instrumentation.ts`, Express middleware, etc.). The package is server-side only (`node:crypto`), so there's no way to accidentally import it in browser code. This is fine for most projects, especially public repos with an Issues-only PAT.
+**Direct mode (simpler)** — token stays in server-side env vars (`instrumentation.ts`, Express middleware, edge route, etc.). The package runs on any server runtime (Node 20+, edge, Workers) — keep the token in server-side env and never import it from client bundles. This is fine for most projects, especially public repos with an Issues-only PAT.
 
 **Proxy mode (more secure)** — token lives in a separate proxy service. Browser error boundaries POST error details to the proxy, which calls the GitHub API. The token never exists in your app's environment at all. Recommended for private repos, repos with sensitive issue content, or multi-app setups where you want a single error collection point.
 
@@ -233,7 +282,7 @@ The skills also trigger automatically when you say things like "add error tracki
 
 ## Limitations
 
-- **Node.js only**: Uses `node:crypto` for fingerprinting. Not compatible with browser or edge runtimes.
+- **Server-side by design**: It needs the GitHub token, so run it server-side — but "server-side" includes Node 20+, edge functions, Cloudflare Workers, and Deno (it uses Web Crypto + `fetch`, no Node-only APIs). Capture browser errors via a proxy (see [`proxy/`](proxy/)).
 - **No session replay**: Unlike Sentry, there's no UI recording for debugging.
 - **No performance tracing**: No APM, transaction monitoring, or request timing.
 - **GitHub API rate limits**: 5,000 requests/hour for authenticated tokens. The in-memory rate limiter prevents hitting this in practice.
@@ -241,7 +290,8 @@ The skills also trigger automatically when you say things like "add error tracki
 
 ## Requirements
 
-- Node.js >= 18
+- A runtime with global `fetch` and Web Crypto — Node.js 20+, edge functions, Cloudflare Workers, or Deno
+- Zero runtime dependencies
 - GitHub PAT with Issues read/write permission
 
 ## License

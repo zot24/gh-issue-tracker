@@ -7,10 +7,25 @@
  * serverless environments to wait for pending operations before returning.
  */
 
-import type { ErrorTrackerConfig, ErrorContext, GitHubClient } from './types'
+import type {
+  ErrorTrackerConfig,
+  ErrorContext,
+  GitHubClient,
+  BugReportInput,
+  BugReportResult,
+} from './types'
 import { generateFingerprint } from './fingerprint'
 import { RateLimiter } from './rate-limiter'
 import { createGitHubClient } from './github'
+import {
+  DEFAULT_SCREENSHOT_BRANCH,
+  DEFAULT_SCREENSHOT_PROXY_PATH,
+  buildScreenshotPath,
+  formatBugReportBody,
+  pagePath,
+  truncate,
+  uint8ToBase64,
+} from './bug-report'
 
 // ---------------------------------------------------------------------------
 // Module state (singleton)
@@ -61,16 +76,20 @@ export function init(cfg: ErrorTrackerConfig): void {
 export function captureException(error: Error, context?: ErrorContext): void {
   if (!config?.enabled || !github || !limiter) return
 
-  const fingerprint = generateFingerprint(error)
+  // Fingerprinting is async (Web Crypto), so it runs inside the fire-and-forget
+  // promise; flush() still awaits the whole chain.
+  const lim = limiter
+  const promise = (async () => {
+    const fingerprint = await generateFingerprint(error)
 
-  if (!limiter.canProcess(fingerprint)) {
-    console.error(`[error-tracker] Rate limited or deduped: ${fingerprint}`)
-    return
-  }
+    if (!lim.canProcess(fingerprint)) {
+      console.error(`[error-tracker] Rate limited or deduped: ${fingerprint}`)
+      return
+    }
+    lim.recordProcessed(fingerprint)
 
-  limiter.recordProcessed(fingerprint)
-
-  const promise = processError(error, fingerprint, context).catch((err) => {
+    await processError(error, fingerprint, context)
+  })().catch((err) => {
     config?.onError?.(err)
   })
 
@@ -87,34 +106,88 @@ export function captureMessage(
 ): void {
   if (!config?.enabled || !github || !limiter) return
 
-  const fingerprint = generateFingerprint(message)
+  const gh = github
+  const lim = limiter
+  const promise = (async () => {
+    const fingerprint = await generateFingerprint(message)
 
-  if (!limiter.canProcess(fingerprint)) return
+    if (!lim.canProcess(fingerprint)) return
+    lim.recordProcessed(fingerprint)
 
-  limiter.recordProcessed(fingerprint)
+    const title = `[${level === 'warning' ? 'Warning' : 'Error'}] ${message.slice(0, 80)}`
+    const body = formatBody(message, undefined, fingerprint, context)
+    const labels = buildLabels(fingerprint)
 
-  const title = `[${level === 'warning' ? 'Warning' : 'Error'}] ${message.slice(0, 80)}`
-  const body = formatBody(message, undefined, fingerprint, context)
-  const labels = buildLabels(fingerprint)
-
-  const promise = github.searchExistingIssue(fingerprint).then(async (existing) => {
-    if (!github) return
+    const existing = await gh.searchExistingIssue(fingerprint)
 
     if (existing?.state === 'open') {
-      await github.addReaction(existing.number)
+      await gh.addReaction(existing.number)
     } else if (existing?.state === 'closed') {
       if (config?.reopenClosed) {
-        await github.reopenIssue(existing.number, recurrenceComment())
-        await github.addReaction(existing.number)
+        await gh.reopenIssue(existing.number, recurrenceComment())
+        await gh.addReaction(existing.number)
       }
     } else {
-      await github.createIssue(title, body, labels)
+      await gh.createIssue(title, body, labels)
     }
-  }).catch((err) => {
+  })().catch((err) => {
     config?.onError?.(err)
   })
 
   pending.push(promise)
+}
+
+/**
+ * Capture a user-submitted bug report as a GitHub issue, optionally with a
+ * screenshot. Unlike `captureException`, this is NOT fire-and-forget or deduped
+ * — it awaits the GitHub calls and returns the created issue so the caller (an
+ * API route) can surface the result. Requires `init()` to have been called.
+ *
+ * If `input.screenshot` is set, the image is committed to the configured
+ * screenshot branch and embedded in the issue. For private repos, set
+ * `appBaseUrl` in `init()` and serve `fetchIssueImage()` at the proxy path so
+ * the image renders.
+ */
+export async function captureBugReport(
+  input: BugReportInput,
+): Promise<BugReportResult | null> {
+  if (!config?.enabled || !github) return null
+  const gh = github
+  const cfg = config
+
+  let screenshotUrl: string | undefined
+  if (input.screenshot) {
+    const branch = cfg.screenshotBranch ?? DEFAULT_SCREENSHOT_BRANCH
+    const path = buildScreenshotPath(input.reporter.id, input.screenshot.filename)
+    const uploaded = await gh.uploadImage({
+      branch,
+      path,
+      base64Content: uint8ToBase64(input.screenshot.data),
+      message: `chore(bug-report): add screenshot ${path}`,
+    })
+    if (uploaded) {
+      if (cfg.appBaseUrl) {
+        const base = cfg.appBaseUrl.replace(/\/$/, '')
+        const proxy = (cfg.screenshotProxyPath ?? DEFAULT_SCREENSHOT_PROXY_PATH).replace(
+          /^\/|\/$/g,
+          '',
+        )
+        screenshotUrl = `${base}/${proxy}/${path}`
+      } else {
+        // Public-repo fallback — raw.githubusercontent works without a token.
+        screenshotUrl = `https://raw.githubusercontent.com/${cfg.githubRepo}/${branch}/${path}`
+      }
+    }
+  }
+
+  const title = `[Bug Report] ${truncate(input.message.replace(/\s+/g, ' ').trim(), 80)} — ${pagePath(input.pageUrl)}`
+  const body = formatBugReportBody(input, screenshotUrl, cfg.environment)
+  const labels = ['bug-report', ...(input.labels ?? [])]
+
+  const issue = await gh.createIssue(title, body, labels)
+  if (!issue) return null
+
+  return { issueNumber: issue.number, issueUrl: issue.url, screenshotUrl }
 }
 
 /**

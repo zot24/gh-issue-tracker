@@ -105,8 +105,13 @@ describe('createGitHubClient', () => {
   })
 
   describe('createIssue', () => {
-    it('creates an issue and returns the issue number', async () => {
-      mockFetch.mockResolvedValue(jsonResponse({ number: 99 }, 201))
+    it('creates an issue and returns its number and url', async () => {
+      mockFetch.mockResolvedValue(
+        jsonResponse(
+          { number: 99, html_url: 'https://github.com/owner/repo/issues/99' },
+          201,
+        ),
+      )
 
       const client = makeClient()
       const result = await client.createIssue(
@@ -123,7 +128,10 @@ describe('createGitHubClient', () => {
         body: 'Error body here',
         labels: ['error-report', 'fingerprint:abc'],
       })
-      expect(result).toBe(99)
+      expect(result).toEqual({
+        number: 99,
+        url: 'https://github.com/owner/repo/issues/99',
+      })
     })
 
     it('returns null and calls onError on failure', async () => {
@@ -133,6 +141,87 @@ describe('createGitHubClient', () => {
       const result = await client.createIssue('title', 'body', [])
 
       expect(result).toBeNull()
+      expect(onError).toHaveBeenCalled()
+    })
+  })
+
+  describe('uploadImage', () => {
+    it('commits the image when the branch already exists', async () => {
+      // 1) GET ref heads/<branch> -> 200 (exists), 2) PUT contents -> 201
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ ref: 'refs/heads/shots' }, 200))
+        .mockResolvedValueOnce(jsonResponse({ content: { path: 'x' } }, 201))
+
+      const client = makeClient()
+      const ok = await client.uploadImage({
+        branch: 'shots',
+        path: '2026/05/u-1-screenshot.png',
+        base64Content: 'QUJD',
+        message: 'add screenshot',
+      })
+
+      expect(ok).toBe(true)
+      const getRef = call(0)
+      expect(getRef.init.method).toBe('GET')
+      expect(getRef.url).toBe('https://api.github.com/repos/owner/repo/git/ref/heads/shots')
+      const put = call(1)
+      expect(put.init.method).toBe('PUT')
+      expect(put.url).toBe(
+        'https://api.github.com/repos/owner/repo/contents/2026/05/u-1-screenshot.png',
+      )
+      expect(JSON.parse(put.init.body as string)).toEqual({
+        message: 'add screenshot',
+        content: 'QUJD',
+        branch: 'shots',
+      })
+    })
+
+    it('creates the branch from the default branch when missing, then commits', async () => {
+      mockFetch
+        // GET ref heads/shots -> 404 (missing)
+        .mockResolvedValueOnce(errorResponse(404, 'Not Found'))
+        // GET repo -> default_branch
+        .mockResolvedValueOnce(jsonResponse({ default_branch: 'main' }, 200))
+        // GET ref heads/main -> sha
+        .mockResolvedValueOnce(jsonResponse({ object: { sha: 'deadbeef' } }, 200))
+        // POST git/refs -> created
+        .mockResolvedValueOnce(jsonResponse({ ref: 'refs/heads/shots' }, 201))
+        // PUT contents -> committed
+        .mockResolvedValueOnce(jsonResponse({ content: {} }, 201))
+
+      const client = makeClient()
+      const ok = await client.uploadImage({
+        branch: 'shots',
+        path: '2026/05/u-1-screenshot.png',
+        base64Content: 'QUJD',
+        message: 'add screenshot',
+      })
+
+      expect(ok).toBe(true)
+      const createRef = call(3)
+      expect(createRef.init.method).toBe('POST')
+      expect(createRef.url).toBe('https://api.github.com/repos/owner/repo/git/refs')
+      expect(JSON.parse(createRef.init.body as string)).toEqual({
+        ref: 'refs/heads/shots',
+        sha: 'deadbeef',
+      })
+      expect(call(4).init.method).toBe('PUT')
+    })
+
+    it('returns false and calls onError when the commit fails', async () => {
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ ref: 'refs/heads/shots' }, 200))
+        .mockResolvedValueOnce(errorResponse(403, 'Forbidden'))
+
+      const client = makeClient()
+      const ok = await client.uploadImage({
+        branch: 'shots',
+        path: '2026/05/u-1-screenshot.png',
+        base64Content: 'QUJD',
+        message: 'add screenshot',
+      })
+
+      expect(ok).toBe(false)
       expect(onError).toHaveBeenCalled()
     })
   })

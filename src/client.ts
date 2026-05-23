@@ -7,10 +7,25 @@
  * serverless environments to wait for pending operations before returning.
  */
 
-import type { ErrorTrackerConfig, ErrorContext, GitHubClient } from './types'
+import type {
+  ErrorTrackerConfig,
+  ErrorContext,
+  GitHubClient,
+  BugReportInput,
+  BugReportResult,
+} from './types'
 import { generateFingerprint } from './fingerprint'
 import { RateLimiter } from './rate-limiter'
 import { createGitHubClient } from './github'
+import {
+  DEFAULT_SCREENSHOT_BRANCH,
+  DEFAULT_SCREENSHOT_PROXY_PATH,
+  buildScreenshotPath,
+  formatBugReportBody,
+  pagePath,
+  truncate,
+  uint8ToBase64,
+} from './bug-report'
 
 // ---------------------------------------------------------------------------
 // Module state (singleton)
@@ -120,6 +135,59 @@ export function captureMessage(
   })
 
   pending.push(promise)
+}
+
+/**
+ * Capture a user-submitted bug report as a GitHub issue, optionally with a
+ * screenshot. Unlike `captureException`, this is NOT fire-and-forget or deduped
+ * — it awaits the GitHub calls and returns the created issue so the caller (an
+ * API route) can surface the result. Requires `init()` to have been called.
+ *
+ * If `input.screenshot` is set, the image is committed to the configured
+ * screenshot branch and embedded in the issue. For private repos, set
+ * `appBaseUrl` in `init()` and serve `fetchIssueImage()` at the proxy path so
+ * the image renders.
+ */
+export async function captureBugReport(
+  input: BugReportInput,
+): Promise<BugReportResult | null> {
+  if (!config?.enabled || !github) return null
+  const gh = github
+  const cfg = config
+
+  let screenshotUrl: string | undefined
+  if (input.screenshot) {
+    const branch = cfg.screenshotBranch ?? DEFAULT_SCREENSHOT_BRANCH
+    const path = buildScreenshotPath(input.reporter.id, input.screenshot.filename)
+    const uploaded = await gh.uploadImage({
+      branch,
+      path,
+      base64Content: uint8ToBase64(input.screenshot.data),
+      message: `chore(bug-report): add screenshot ${path}`,
+    })
+    if (uploaded) {
+      if (cfg.appBaseUrl) {
+        const base = cfg.appBaseUrl.replace(/\/$/, '')
+        const proxy = (cfg.screenshotProxyPath ?? DEFAULT_SCREENSHOT_PROXY_PATH).replace(
+          /^\/|\/$/g,
+          '',
+        )
+        screenshotUrl = `${base}/${proxy}/${path}`
+      } else {
+        // Public-repo fallback — raw.githubusercontent works without a token.
+        screenshotUrl = `https://raw.githubusercontent.com/${cfg.githubRepo}/${branch}/${path}`
+      }
+    }
+  }
+
+  const title = `[Bug Report] ${truncate(input.message.replace(/\s+/g, ' ').trim(), 80)} — ${pagePath(input.pageUrl)}`
+  const body = formatBugReportBody(input, screenshotUrl, cfg.environment)
+  const labels = ['bug-report', ...(input.labels ?? [])]
+
+  const issue = await gh.createIssue(title, body, labels)
+  if (!issue) return null
+
+  return { issueNumber: issue.number, issueUrl: issue.url, screenshotUrl }
 }
 
 /**

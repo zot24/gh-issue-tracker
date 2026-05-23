@@ -98,6 +98,18 @@ captureException(error)
 await flush() // don't return until the GitHub API call finishes
 ```
 
+### `captureBugReport(input: BugReportInput): Promise<BugReportResult | null>`
+
+Create a GitHub issue from a user bug report, optionally committing + embedding a screenshot. Awaits and returns `{ issueNumber, issueUrl, screenshotUrl }`. See [Bug reports](#bug-reports-with-screenshots).
+
+### `fetchIssueImage(opts): Promise<{ status, body?, contentType? }>`
+
+Read-through proxy that streams a committed screenshot using the token — wrap it in a Response at your `/api/bug-screenshots/[...path]` route so private-repo images render.
+
+### Browser entry — `gh-issue-tracker/browser`
+
+`captureScreenshot(options?)`, `submitBugReport(input)`, and `buildBugReportFormData(input)` for the client side. Requires the optional `modern-screenshot` peer dependency.
+
 ### `ErrorContext`
 
 ```ts
@@ -128,6 +140,41 @@ For complete Next.js coverage, combine all three Next.js examples:
 2. **Client errors**: Error boundaries catch React errors and POST to the proxy
 3. **Proxy**: Server-side endpoint receives client errors and reports them (keeps token safe)
 
+## Bug reports (with screenshots)
+
+Beyond automatic error capture, the package can turn a **user-submitted bug report** into a GitHub issue — with a screenshot, a pin location, and environment metadata.
+
+**Client** (`gh-issue-tracker/browser`, needs the optional `modern-screenshot` peer dep):
+
+```ts
+import { captureScreenshot, submitBugReport } from 'gh-issue-tracker/browser'
+
+const shot = await captureScreenshot()       // captures the page, incl. open modals
+const res = await submitBugReport({
+  endpoint: '/api/bug-reports',
+  message,
+  screenshot: shot?.file,
+  pin,                                        // optional { x, y } as % of viewport
+})
+// → { ok, status, issueNumber, issueUrl, error }
+```
+
+Build your own button/dialog around these helpers. Add `data-screenshot-target` to scope the capture; mark your widget `data-bug-report` so it's hidden from the shot.
+
+**Server** — your API route calls `captureBugReport`, which commits the screenshot to a `bug-report-screenshots` branch and embeds it in the issue:
+
+```ts
+import { captureBugReport } from 'gh-issue-tracker'
+
+const result = await captureBugReport({
+  message, pageUrl,
+  reporter: { id, email, name, role },
+  screenshot: file ? { data: new Uint8Array(await file.arrayBuffer()), filename: file.name } : undefined,
+})
+```
+
+For **private repos**, set `appBaseUrl` in `init()` and serve `fetchIssueImage()` at `/api/bug-screenshots/[...path]` so the committed image renders in the issue (raw URLs 404 anonymously on private repos). Full wiring is in [CLAUDE.md](CLAUDE.md#setup-guide-for-consumers).
+
 ## GitHub token setup
 
 1. Go to **GitHub → Settings → Developer settings → Fine-grained personal access tokens**
@@ -135,6 +182,7 @@ For complete Next.js coverage, combine all three Next.js examples:
 3. Set:
    - **Repository access**: Only select repositories → choose your target repo
    - **Permissions**: Issues → Read and write
+   - **Permissions**: Contents → Read and write *(only if you use bug-report screenshots — they're committed to a branch)*
 4. Copy the token and set it as `GITHUB_TOKEN` in your environment
 
 > For classic tokens, the `repo` scope works but grants broader access than needed.

@@ -7,7 +7,7 @@
  * never throw, so the tracker can never crash the host application.
  */
 
-import type { GitHubClient, ExistingIssue } from './types'
+import type { GitHubClient, ExistingIssue, CreatedIssue } from './types'
 
 export interface GitHubClientConfig {
   token: string
@@ -37,22 +37,46 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
     'Content-Type': 'application/json',
   }
 
-  async function request(method: string, path: string, body?: unknown): Promise<unknown> {
-    const res = await fetch(`${API_BASE}${path}`, {
+  /** Low-level fetch — returns the Response without throwing, for callers that
+   *  need to inspect the status (e.g. a 404 means "branch missing, create it"). */
+  function ghFetch(method: string, path: string, body?: unknown): Promise<Response> {
+    return fetch(`${API_BASE}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+  }
 
+  /** Fetch + throw on error + parse JSON, for the happy-path calls. */
+  async function request(method: string, path: string, body?: unknown): Promise<unknown> {
+    const res = await ghFetch(method, path, body)
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
       throw new Error(
         `GitHub ${method} ${path} failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
       )
     }
-
     if (res.status === 204) return null
     return res.json().catch(() => null)
+  }
+
+  /** Ensure `branch` exists, creating it from the repo's default branch if not. */
+  async function ensureBranch(branch: string): Promise<void> {
+    const head = await ghFetch('GET', `/repos/${owner}/${repo}/git/ref/heads/${branch}`)
+    if (head.ok) return
+    if (head.status !== 404) {
+      throw new Error(`GitHub get ref heads/${branch} failed: ${head.status} ${head.statusText}`)
+    }
+    // Branch doesn't exist yet — branch it off the repo's default branch.
+    const repoInfo = (await request('GET', `/repos/${owner}/${repo}`)) as { default_branch: string }
+    const defRef = (await request(
+      'GET',
+      `/repos/${owner}/${repo}/git/ref/heads/${repoInfo.default_branch}`,
+    )) as { object: { sha: string } }
+    await request('POST', `/repos/${owner}/${repo}/git/refs`, {
+      ref: `refs/heads/${branch}`,
+      sha: defRef.object.sha,
+    })
   }
 
   return {
@@ -82,14 +106,15 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
       }
     },
 
-    async createIssue(title: string, body: string, labels: string[]): Promise<number | null> {
+    async createIssue(title: string, body: string, labels: string[]): Promise<CreatedIssue | null> {
       try {
         const data = (await request('POST', `/repos/${owner}/${repo}/issues`, {
           title,
           body,
           labels,
-        })) as { number: number } | null
-        return data?.number ?? null
+        })) as { number: number; html_url: string } | null
+        if (!data) return null
+        return { number: data.number, url: data.html_url }
       } catch (err) {
         config.onError(err)
         return null
@@ -116,6 +141,21 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
         })
       } catch (err) {
         config.onError(err)
+      }
+    },
+
+    async uploadImage({ branch, path, base64Content, message }): Promise<boolean> {
+      try {
+        await ensureBranch(branch)
+        await request('PUT', `/repos/${owner}/${repo}/contents/${path}`, {
+          message,
+          content: base64Content,
+          branch,
+        })
+        return true
+      } catch (err) {
+        config.onError(err)
+        return false
       }
     },
   }

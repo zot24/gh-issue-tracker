@@ -21,6 +21,21 @@ export interface ErrorTrackerConfig {
   dedupeWindowMs?: number
   /** Reopen closed issues on recurrence instead of ignoring. Default: true */
   reopenClosed?: boolean
+  /**
+   * Branch where bug-report screenshots are committed (via `captureBugReport`).
+   * Default: "bug-report-screenshots"
+   */
+  screenshotBranch?: string
+  /**
+   * Base URL of your app's screenshot proxy, no trailing slash. When set,
+   * screenshot links point to `${appBaseUrl}/${screenshotProxyPath}/<path>`,
+   * which must serve the image via `fetchIssueImage()` — required for PRIVATE
+   * repos, whose `raw.githubusercontent.com` URLs 404 anonymously. When unset,
+   * links use `raw.githubusercontent.com` (works for public repos only).
+   */
+  appBaseUrl?: string
+  /** Path segment for the screenshot proxy route. Default: "api/bug-screenshots" */
+  screenshotProxyPath?: string
 }
 
 /**
@@ -54,12 +69,90 @@ export interface ExistingIssue {
   title: string
 }
 
+/** A created GitHub issue. */
+export interface CreatedIssue {
+  number: number
+  url: string
+}
+
 /**
  * Interface for the GitHub API layer, enabling test mocking.
  */
 export interface GitHubClient {
   searchExistingIssue(fingerprint: string): Promise<ExistingIssue | null>
-  createIssue(title: string, body: string, labels: string[]): Promise<number | null>
+  createIssue(title: string, body: string, labels: string[]): Promise<CreatedIssue | null>
   addReaction(issueNumber: number): Promise<void>
   reopenIssue(issueNumber: number, comment: string): Promise<void>
+  /**
+   * Commit an image to `branch` at `path` (creating the branch from the repo's
+   * default branch if it doesn't exist). Returns true on success.
+   */
+  uploadImage(opts: {
+    branch: string
+    path: string
+    base64Content: string
+    message: string
+  }): Promise<boolean>
+}
+
+/** Who filed a bug report. */
+export interface BugReportReporter {
+  id: string
+  email?: string
+  name?: string
+  role?: string
+}
+
+/** Raw screenshot bytes to attach to a bug report. */
+export interface BugReportScreenshot {
+  data: Uint8Array
+  filename: string
+  /** Defaults to "image/png". */
+  contentType?: string
+}
+
+/** Input to `captureBugReport()`. */
+export interface BugReportInput {
+  /** User-written description of the problem. */
+  message: string
+  /** URL of the page the report was filed from. */
+  pageUrl: string
+  reporter: BugReportReporter
+  /** Optional pin location as a percentage of the viewport (0–100). */
+  pin?: { x: number; y: number }
+  /** Free-form environment metadata rendered into the issue body. */
+  metadata?: Record<string, string | number | boolean | null | undefined>
+  /** Optional screenshot, committed to the screenshot branch and linked. */
+  screenshot?: BugReportScreenshot
+  /** Extra labels added alongside the default "bug-report" label. */
+  labels?: string[]
+}
+
+/** Result of `captureBugReport()`. */
+export interface BugReportResult {
+  issueNumber: number
+  issueUrl: string
+  screenshotUrl?: string
+}
+
+/** Options for `fetchIssueImage()` — the screenshot read-through proxy. */
+export interface FetchIssueImageOptions {
+  /** GitHub token with contents read on the repo. */
+  token: string
+  /** Repository in "owner/repo" format. */
+  repo: string
+  /** Image path of shape `yyyy/mm/<filename>`. */
+  path: string
+  /** Branch the image was committed to. Default: "bug-report-screenshots" */
+  branch?: string
+}
+
+/** Result of `fetchIssueImage()`. */
+export interface FetchIssueImageResult {
+  /** HTTP status to relay (200, 400, 404, 502, 503). */
+  status: number
+  /** Image bytes, present on 200. */
+  body?: ArrayBuffer
+  /** MIME type, present on 200. */
+  contentType?: string
 }

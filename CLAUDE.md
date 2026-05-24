@@ -49,6 +49,19 @@ try { risky() } catch (e) {
 
 Framework wiring (Next.js `instrumentation.ts` + `onRequestError`, Express middleware) lives in [`examples/`](examples/). Note: `init()` reads config from its argument, not env, so call it once at startup. The package is edge-safe; if your routes use the edge runtime, see the edge note in the Next.js example.
 
+#### Capture *every* 500 (thrown OR returned)
+
+A server error must file an issue however it's produced. Frameworks surface two paths: a handler can **throw**, or it can deliberately **return** a 5xx (e.g. `return Response.json(..., { status: 500 })`). A thrown-error hook like `onRequestError` only sees the first. `withErrorReporting` wraps a handler and covers both:
+
+```ts
+import { withErrorReporting } from 'gh-issue-tracker'
+
+// Reports any thrown error AND any returned status >= 500, then files an issue.
+export const POST = withErrorReporting(async (req) => { ... })
+```
+
+Options: `minStatus` (default `500`), `catchThrows` (default `true`), `rethrow` (default `true` — capture then re-throw so the framework still handles it; set `false` to swallow and return a 500). Framework-agnostic (Next.js route handlers, Remix, Hono, Workers — anything `(Request) => Response`). Capture is deduplicated, so if a thrown error is *also* caught by `onRequestError`, only one issue is created. **The recipe: `onRequestError` for throws app-wide + `withErrorReporting` on any handler that can return a 5xx.**
+
 ### 4. Server: user bug reports with screenshots
 
 `captureBugReport` creates a richly-formatted issue and (optionally) commits a screenshot, embedding it in the body. Unlike `captureException`, it awaits and returns the created issue.
@@ -123,17 +136,18 @@ Build your own button/dialog UI around these (a pin-to-locate overlay is a nice 
 
 ```
 src/
-├── index.ts          Server barrel (gh-issue-tracker): init, captureException, captureMessage, captureBugReport, flush, fetchIssueImage + types
+├── index.ts          Server barrel (gh-issue-tracker): init, captureException, captureMessage, captureBugReport, withErrorReporting, flush, fetchIssueImage + types
 ├── browser.ts        Client barrel (gh-issue-tracker/browser): captureScreenshot, submitBugReport, buildBugReportFormData
 ├── types.ts          All TypeScript interfaces (config, ErrorContext, BugReport*, FetchIssueImage*)
 ├── client.ts         Singleton orchestrator — error dedup + captureBugReport (upload screenshot → create issue)
 ├── github.ts         fetch-based GitHub REST client (search/create issue, reaction, reopen, uploadImage). No SDK dep. Never throws.
 ├── bug-report.ts     Pure helpers: base64 encode, screenshot path, issue body formatting
 ├── screenshot.ts     fetchIssueImage — read-through proxy for private-repo screenshots
+├── handler.ts        withErrorReporting — wrap a route handler to capture thrown errors + returned 5xx
 ├── fingerprint.ts    SHA-256 (Web Crypto) hash of error name + truncated message + normalized top 3 stack frames
 ├── normalizer.ts     Strips line:col numbers, webpack hashes, query strings from stack traces
 ├── rate-limiter.ts   Sliding window (N/min) + dedup window (fingerprint suppression)
-└── __tests__/        52 unit tests (client, github, fingerprint, normalizer, rate-limiter, screenshot)
+└── __tests__/        61 unit tests (client, github, fingerprint, normalizer, rate-limiter, screenshot, handler)
 ```
 
 ### Key design decisions
@@ -163,7 +177,7 @@ Error thrown → captureException(error, context?)
 ```bash
 pnpm install        # install dependencies
 pnpm build          # build ESM + CJS + .d.ts via tsup
-pnpm test           # run all 40 tests with vitest
+pnpm test           # run all 61 tests with vitest
 pnpm type-check     # tsc --noEmit
 ```
 

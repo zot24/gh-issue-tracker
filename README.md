@@ -106,6 +106,18 @@ Create a GitHub issue from a user bug report, optionally committing + embedding 
 
 Read-through proxy that streams a committed screenshot using the token — wrap it in a Response at your `/api/bug-screenshots/[...path]` route so private-repo images render.
 
+### `withErrorReporting(handler, options?)`
+
+Wrap a route handler so **every** server error files an issue — both **thrown** errors and **returned** `>= 500` responses (a thrown-error hook like Next.js `onRequestError` only catches the first). Framework-agnostic (Next.js, Remix, Hono, Workers — anything `(Request) => Response`).
+
+```ts
+import { withErrorReporting } from 'gh-issue-tracker'
+
+export const POST = withErrorReporting(async (req) => { ... })
+```
+
+Options: `minStatus` (default `500`), `catchThrows` (default `true`), `rethrow` (default `true`), `context`. Capture is deduplicated, so an error also seen by `onRequestError` still produces just one issue.
+
 ### Browser entry — `gh-issue-tracker/browser`
 
 `captureScreenshot(options?)`, `submitBugReport(input)`, and `buildBugReportFormData(input)` for the client side. Requires the optional `modern-screenshot` peer dependency.

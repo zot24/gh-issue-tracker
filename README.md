@@ -185,7 +185,9 @@ const result = await captureBugReport({
 })
 ```
 
-For **private repos**, set `appBaseUrl` in `init()` and serve `fetchIssueImage()` at `/api/bug-screenshots/[...path]` so the committed image renders in the issue (raw URLs 404 anonymously on private repos). Full wiring is in [CLAUDE.md](CLAUDE.md#setup-guide-for-consumers).
+For **private repos**, set `appBaseUrl` in `init()` and serve `fetchIssueImage()` at `/api/bug-screenshots/[...path]` so the committed image renders in the issue (raw URLs 404 anonymously on private repos — GitHub's camo image proxy fetches with no credentials, so any auth-required URL is unrenderable). Full wiring is in [CLAUDE.md](CLAUDE.md#setup-guide-for-consumers).
+
+> **Security note**: the proxy route is public and ungated — anyone holding (or guessing) a screenshot path can fetch the image. Fine for low-sensitivity UI screenshots; if screenshots can contain PII or customer data, gate the route with a per-screenshot capability key (hashed at rest, constant-time compare, TTL + revocation). Design and a reference implementation are documented in [docs/design-decisions.md](docs/design-decisions.md#decision-read-through-proxy-for-private-repo-screenshots).
 
 ## GitHub token setup
 

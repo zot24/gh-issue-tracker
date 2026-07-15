@@ -97,6 +97,38 @@ The SHA-256 hash is truncated to 12 hex characters and stored as a GitHub label 
 - Long-running servers still get periodic cleanup
 - The `destroy()` method exists for explicit cleanup in tests
 
+## Decision: Read-through proxy for private-repo screenshots
+
+**Context**: Bug-report screenshots must render **inline** in the GitHub issue body. GitHub rewrites every image in issue markdown through its **camo proxy**, which fetches the origin URL server-side with *no credentials* — so any URL that requires auth can never render. On a private repo that rules out every GitHub-hosted option:
+
+- `raw.githubusercontent.com/...` → 404 anonymously
+- the Contents API `download_url` → carries a signed `?token=` that expires within minutes (renders once, then breaks forever)
+- `github.com/.../blob/...` links → work for authenticated humans who click, but never render inline
+
+This failure mode is easy to misdiagnose because the developer *can* see the image at the blob URL — their browser session authenticates that path, while camo's anonymous fetch of the embed URL 404s. The two URLs succeed or fail independently.
+
+**Choice**: Commit screenshots to a `bug-report-screenshots` branch (Contents API), but embed a URL pointing at the **consumer's own app** (`appBaseUrl` + `screenshotProxyPath`). The app serves `fetchIssueImage()` at that route: it fetches the bytes from the GitHub API server-side *with* the token and streams them out. Camo fetches the app route anonymously; the app authenticates to GitHub behind the scenes.
+
+**Consequences**:
+- Screenshots render inline on private repos with zero extra storage infrastructure
+- The app route is **public and ungated** — anyone holding a screenshot URL (or guessing one: paths are `yyyy/mm/<reporter>-<timestamp>-<name>`, shape-validated but enumerable in principle) can fetch the image
+- Acceptable when screenshots show low-sensitivity UI; NOT acceptable when they can contain PII or customer data — see the hardened variant below
+- Path validation (`PATH_SHAPE` + `..` check) prevents traversal into other repo content
+
+### Hardened variant: capability-URL proxy (reference implementation)
+
+When screenshots can contain sensitive data, gate the proxy with a per-screenshot **capability key** instead of relying on path obscurity. Reference implementation: Residency OS ([zot24/paraguayos#800](https://github.com/zot24/paraguayos/issues/800), [PR #802](https://github.com/zot24/paraguayos/pull/802)) — it replaced this package's commit-to-branch approach entirely after shipping the exact broken-embed failure described above:
+
+1. **Storage**: screenshots go to private object storage (Supabase bucket there; any private store works), not a repo branch — keeps binary blobs out of git history and makes deletion real
+2. **Capability key**: mint 32 random bytes (base64url) per screenshot; embed `![Screenshot](https://app.example.com/api/.../{reportId}/screenshot?k=<key>)` in the issue. Store only the key's **SHA-256 hash**; the plaintext exists solely inside the issue body. A database leak reveals nothing fetchable
+3. **Verification**: constant-time hash comparison; **uniform bare 404** for every failure (unknown id, wrong/revoked key, expired, missing object) so the route is not an existence oracle; reject malformed ids before touching the database
+4. **Revocation**: NULL the stored hash — access stops without deleting anything. (GitHub camo may serve its own cached copy for a short window after revocation)
+5. **TTL**: an `expires_at` per screenshot; the route refuses access past it, and a daily cron deletes the expired bytes (access-gating is instant, byte deletion needs a job)
+6. **Delete on resolution**: a GitHub `issues.closed` webhook (HMAC `X-Hub-Signature-256`, constant-time compare) deletes the screenshot and revokes the key when the issue closes — resolved bugs don't need to keep PII around
+7. **Log hygiene**: the key rides in the URL, so keep query strings out of request logs / error trackers on that route
+
+The trade-off between the two variants is infrastructure: the built-in proxy needs nothing beyond the token the package already has; the capability variant needs object storage, two columns, and a cron — buy it when screenshot content is sensitive.
+
 ## Alternatives considered
 
 1. **Keep Sentry** — comprehensive but adds SaaS cost and build complexity

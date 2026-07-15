@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/zot24/gh-issue-tracker/compare/v1.4.0...v1.5.0) (2026-07-15)
+
+
+### Features
+
+* withErrorReporting() — capture thrown errors AND returned 5xx ([#29](https://github.com/zot24/gh-issue-tracker/issues/29)) ([2260bf1](https://github.com/zot24/gh-issue-tracker/commit/2260bf1739e156ac663a085efae14010b6b76281))
+
 ## [1.4.0](https://github.com/zot24/gh-issue-tracker/compare/v1.3.0...v1.4.0) (2026-05-24)
 
 

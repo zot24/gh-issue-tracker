@@ -97,7 +97,17 @@ The SHA-256 hash is truncated to 12 hex characters and stored as a GitHub label 
 - Long-running servers still get periodic cleanup
 - The `destroy()` method exists for explicit cleanup in tests
 
-## Decision: Read-through proxy for private-repo screenshots
+## Decision: Native user-attachments for screenshots (default)
+
+**Context**: Branch + proxy existed because GitHub camo cannot fetch private `raw.githubusercontent.com` URLs.
+
+**Choice**: Default `screenshotUpload` to `"user-attachment"` — `POST /repos/{owner}/{repo}/user-attachments/assets` on `uploads.github.com`, same as `gh issue create --attach`. The returned `https://github.com/user-attachments/assets/...` URL renders inline on public and private repos. No Contents permission, no screenshot branch, no app proxy.
+
+**Consequences**:
+- Issues-only PAT is enough for screenshots
+- GHES / existing proxy setups set `screenshotUpload: "branch"`
+
+## Decision: Read-through proxy for private-repo screenshots (legacy, `screenshotUpload: "branch"`)
 
 **Context**: Bug-report screenshots must render **inline** in the GitHub issue body. GitHub rewrites every image in issue markdown through its **camo proxy**, which fetches the origin URL server-side with *no credentials* — so any URL that requires auth can never render. On a private repo that rules out every GitHub-hosted option:
 

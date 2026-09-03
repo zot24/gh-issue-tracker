@@ -100,11 +100,11 @@ await flush() // don't return until the GitHub API call finishes
 
 ### `captureBugReport(input: BugReportInput): Promise<BugReportResult | null>`
 
-Create a GitHub issue from a user bug report, optionally committing + embedding a screenshot. Awaits and returns `{ issueNumber, issueUrl, screenshotUrl }`. See [Bug reports](#bug-reports-with-screenshots).
+Create a GitHub issue from a user bug report, optionally uploading a screenshot as a GitHub user attachment. Awaits and returns `{ issueNumber, issueUrl, screenshotUrl }`. See [Bug reports](#bug-reports-with-screenshots).
 
 ### `fetchIssueImage(opts): Promise<{ status, body?, contentType? }>`
 
-Read-through proxy that streams a committed screenshot using the token — wrap it in a Response at your `/api/bug-screenshots/[...path]` route so private-repo images render.
+Legacy. Only used when `screenshotUpload: "branch"`. Streams a committed screenshot for a proxy route.
 
 ### `withErrorReporting(handler, options?)`
 
@@ -173,7 +173,7 @@ const res = await submitBugReport({
 
 Build your own button/dialog around these helpers. Add `data-screenshot-target` to scope the capture; mark your widget `data-bug-report` so it's hidden from the shot.
 
-**Server** — your API route calls `captureBugReport`, which commits the screenshot to a `bug-report-screenshots` branch and embeds it in the issue:
+**Server** — `captureBugReport` uploads the screenshot as a GitHub user attachment (same as `gh issue create --attach`) and embeds it. Issues-only PAT is enough. No screenshot branch, no proxy.
 
 ```ts
 import { captureBugReport } from 'gh-issue-tracker'
@@ -185,9 +185,7 @@ const result = await captureBugReport({
 })
 ```
 
-For **private repos**, set `appBaseUrl` in `init()` and serve `fetchIssueImage()` at `/api/bug-screenshots/[...path]` so the committed image renders in the issue (raw URLs 404 anonymously on private repos — GitHub's camo image proxy fetches with no credentials, so any auth-required URL is unrenderable). Full wiring is in [CLAUDE.md](CLAUDE.md#setup-guide-for-consumers).
-
-> **Security note**: the proxy route is public and ungated — anyone holding (or guessing) a screenshot path can fetch the image. Fine for low-sensitivity UI screenshots; if screenshots can contain PII or customer data, gate the route with a per-screenshot capability key (hashed at rest, constant-time compare, TTL + revocation). Design and a reference implementation are documented in [docs/design-decisions.md](docs/design-decisions.md#decision-read-through-proxy-for-private-repo-screenshots).
+Set `screenshotUpload: "branch"` only for GitHub Enterprise Server or existing `fetchIssueImage` setups.
 
 ## GitHub token setup
 
@@ -196,7 +194,7 @@ For **private repos**, set `appBaseUrl` in `init()` and serve `fetchIssueImage()
 3. Set:
    - **Repository access**: Only select repositories → choose your target repo
    - **Permissions**: Issues → Read and write
-   - **Permissions**: Contents → Read and write *(only if you use bug-report screenshots — they're committed to a branch)*
+   - **Permissions**: Contents → Read and write *(only if `screenshotUpload: "branch"`)*
 4. Copy the token and set it as `GITHUB_TOKEN` in your environment
 
 > For classic tokens, the `repo` scope works but grants broader access than needed.

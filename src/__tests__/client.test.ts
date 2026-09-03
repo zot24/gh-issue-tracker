@@ -8,6 +8,7 @@ const mockGitHubClient: GitHubClient = {
   addReaction: vi.fn(),
   reopenIssue: vi.fn(),
   uploadImage: vi.fn(),
+  uploadUserAttachment: vi.fn(),
 }
 
 const ISSUE = { number: 123, url: 'https://github.com/owner/repo/issues/123' }
@@ -182,6 +183,7 @@ describe('ErrorTrackerClient', () => {
       )
       // No screenshot provided → no upload.
       expect(mockGitHubClient.uploadImage).not.toHaveBeenCalled()
+      expect(mockGitHubClient.uploadUserAttachment).not.toHaveBeenCalled()
       expect(result).toEqual({
         issueNumber: 123,
         issueUrl: ISSUE.url,
@@ -189,11 +191,73 @@ describe('ErrorTrackerClient', () => {
       })
     })
 
-    it('uploads a screenshot and embeds the proxy URL when appBaseUrl is set', async () => {
+    it('uploads a screenshot as a GitHub user attachment by default', async () => {
+      const assetUrl =
+        'https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
+      vi.mocked(mockGitHubClient.uploadUserAttachment).mockResolvedValue(assetUrl)
+
+      initTracker()
+      const bytes = new Uint8Array([65, 66, 67])
+      const result = await captureBugReport({
+        message: 'Layout breaks in the export modal when the list is long',
+        pageUrl: 'https://app.example.com/expenses',
+        reporter: { id: 'u1' },
+        screenshot: { data: bytes, filename: 'screenshot.png' },
+      })
+
+      expect(mockGitHubClient.uploadUserAttachment).toHaveBeenCalledWith({
+        name: 'screenshot.png',
+        contentType: 'image/png',
+        data: bytes,
+      })
+      expect(mockGitHubClient.uploadImage).not.toHaveBeenCalled()
+      const body = vi.mocked(mockGitHubClient.createIssue).mock.calls[0]?.[1]
+      expect(body).toContain(`![Screenshot](${assetUrl})`)
+      expect(result?.screenshotUrl).toBe(assetUrl)
+    })
+
+    it('derives content type from the screenshot filename', async () => {
+      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
+      vi.mocked(mockGitHubClient.uploadUserAttachment).mockResolvedValue(
+        'https://github.com/user-attachments/assets/jpeg-id',
+      )
+
+      initTracker()
+      await captureBugReport({
+        message: 'Layout breaks in the export modal when the list is long',
+        pageUrl: 'https://app.example.com/expenses',
+        reporter: { id: 'u1' },
+        screenshot: { data: new Uint8Array([1]), filename: 'shot.jpg' },
+      })
+
+      expect(mockGitHubClient.uploadUserAttachment).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'shot.jpg', contentType: 'image/jpeg' }),
+      )
+    })
+
+    it('notes a failed native screenshot upload in the issue body', async () => {
+      vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
+      vi.mocked(mockGitHubClient.uploadUserAttachment).mockResolvedValue(null)
+
+      initTracker()
+      const result = await captureBugReport({
+        message: 'Layout breaks in the export modal when the list is long',
+        pageUrl: 'https://app.example.com/expenses',
+        reporter: { id: 'u1' },
+        screenshot: { data: new Uint8Array([1]), filename: 'screenshot.png' },
+      })
+
+      const body = vi.mocked(mockGitHubClient.createIssue).mock.calls[0]?.[1]
+      expect(body).toContain('_Screenshot upload failed_')
+      expect(result?.screenshotUrl).toBeUndefined()
+    })
+
+    it('falls back to branch + proxy URL when screenshotUpload is "branch"', async () => {
       vi.mocked(mockGitHubClient.createIssue).mockResolvedValue(ISSUE)
       vi.mocked(mockGitHubClient.uploadImage).mockResolvedValue(true)
 
-      initTracker({ appBaseUrl: 'https://app.example.com' })
+      initTracker({ appBaseUrl: 'https://app.example.com', screenshotUpload: 'branch' })
       const result = await captureBugReport({
         message: 'Layout breaks in the export modal when the list is long',
         pageUrl: 'https://app.example.com/expenses',
@@ -205,8 +269,9 @@ describe('ErrorTrackerClient', () => {
         expect.objectContaining({
           branch: 'bug-report-screenshots',
           base64Content: 'QUJD', // base64("ABC")
-        })
+        }),
       )
+      expect(mockGitHubClient.uploadUserAttachment).not.toHaveBeenCalled()
       const body = vi.mocked(mockGitHubClient.createIssue).mock.calls[0]?.[1]
       expect(body).toContain('![Screenshot](https://app.example.com/api/bug-screenshots/')
       expect(result?.screenshotUrl).toContain('https://app.example.com/api/bug-screenshots/')

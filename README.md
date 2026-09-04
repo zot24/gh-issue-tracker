@@ -54,6 +54,7 @@ try {
 | `githubRepo` | `string` | — | **Required.** Repository in `owner/repo` format |
 | `environment` | `string` | `"development"` | Environment name shown in issue body |
 | `labels` | `string[]` | `[]` | Additional labels applied to every issue |
+| `autoCreateLabels` | `boolean` | `true` | Create missing labels (`error-report`, fingerprints, extras) on first use |
 | `enabled` | `boolean` | `true` | Kill switch. Use `enabled: !!process.env.GITHUB_TOKEN` to auto-disable when no token is set (e.g., local dev) |
 | `onError` | `(err) => void` | `console.error` | Called when the GitHub API fails |
 | `rateLimitPerMinute` | `number` | `10` | Max new issues created per minute |

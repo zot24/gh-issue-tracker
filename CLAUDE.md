@@ -128,12 +128,12 @@ src/
 ├── fingerprint.ts    SHA-256 (Web Crypto) hash of error name + truncated message + normalized top 3 stack frames
 ├── normalizer.ts     Strips line:col numbers, webpack hashes, query strings from stack traces
 ├── rate-limiter.ts   Sliding window (N/min) + dedup window (fingerprint suppression)
-└── __tests__/        71 unit tests (client, github, fingerprint, normalizer, rate-limiter, screenshot, handler)
+└── __tests__/        75 unit tests (client, github, fingerprint, normalizer, rate-limiter, screenshot, handler)
 ```
 
 ### Key design decisions
 
-- **Fingerprints as labels**: 12-char hex stored as GitHub label `fingerprint:<hash>`. Enables search.
+- **Fingerprints as labels**: 12-char hex stored as GitHub label `fingerprint:<hash>`. Enables search. Missing labels (`error-report`, fingerprints, extras) are created on first use (`autoCreateLabels`, default true). If GitHub still rejects them, the issue is filed unlabeled so the first error is not dropped.
 - **Dedup strategy**: Search issues by fingerprint label. Open issue → add reaction. Closed → reopen + comment. Not found → create new.
 - **Rate limiter unref**: Cleanup timer is `unref()`'d so it never prevents Node.js process exit.
 - **GitHub client never throws**: All methods catch errors internally and call `onError`. The tracker never crashes the host application.

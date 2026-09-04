@@ -14,13 +14,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response
 }
 
-function errorResponse(status: number, statusText = 'Error'): Response {
+function errorResponse(status: number, statusText = 'Error', body: unknown = 'error detail'): Response {
   return {
     ok: false,
     status,
     statusText,
-    json: async () => ({}),
-    text: async () => 'error detail',
+    json: async () => (typeof body === 'string' ? {} : body),
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
   } as unknown as Response
 }
 
@@ -105,13 +105,13 @@ describe('createGitHubClient', () => {
   })
 
   describe('createIssue', () => {
-    it('creates an issue and returns its number and url', async () => {
-      mockFetch.mockResolvedValue(
-        jsonResponse(
-          { number: 99, html_url: 'https://github.com/owner/repo/issues/99' },
-          201,
-        ),
-      )
+    const created = { number: 99, html_url: 'https://github.com/owner/repo/issues/99' }
+
+    it('creates missing labels then the issue', async () => {
+      mockFetch.mockImplementation(async (url: string) => {
+        if (String(url).endsWith('/labels')) return jsonResponse({ name: 'ok' }, 201)
+        return jsonResponse(created, 201)
+      })
 
       const client = makeClient()
       const result = await client.createIssue(
@@ -120,10 +120,19 @@ describe('createGitHubClient', () => {
         ['error-report', 'fingerprint:abc'],
       )
 
-      const { url, init } = call()
-      expect(init.method).toBe('POST')
-      expect(url).toBe('https://api.github.com/repos/owner/repo/issues')
-      expect(JSON.parse(init.body as string)).toEqual({
+      expect(call(0).url).toBe('https://api.github.com/repos/owner/repo/labels')
+      expect(JSON.parse(call(0).init.body as string)).toEqual({
+        name: 'error-report',
+        color: 'B60205',
+        description: 'Auto-created by gh-issue-tracker',
+      })
+      expect(JSON.parse(call(1).init.body as string)).toMatchObject({
+        name: 'fingerprint:abc',
+        color: '5319E7',
+      })
+
+      expect(call(2).url).toBe('https://api.github.com/repos/owner/repo/issues')
+      expect(JSON.parse(call(2).init.body as string)).toEqual({
         title: '[Error] TypeError',
         body: 'Error body here',
         labels: ['error-report', 'fingerprint:abc'],
@@ -132,6 +141,87 @@ describe('createGitHubClient', () => {
         number: 99,
         url: 'https://github.com/owner/repo/issues/99',
       })
+    })
+
+    it('treats already_exists as success and still creates the issue', async () => {
+      mockFetch.mockImplementation(async (url: string) => {
+        if (String(url).endsWith('/labels')) {
+          return errorResponse(422, 'Validation Failed', {
+            message: 'Validation Failed',
+            errors: [{ resource: 'Label', code: 'already_exists', field: 'name' }],
+          })
+        }
+        return jsonResponse(created, 201)
+      })
+
+      const client = makeClient()
+      const result = await client.createIssue('title', 'body', ['error-report'])
+
+      expect(result?.number).toBe(99)
+      expect(onError).not.toHaveBeenCalled()
+    })
+
+    it('caches created labels so a second issue does not re-POST them', async () => {
+      mockFetch.mockImplementation(async (url: string) => {
+        if (String(url).endsWith('/labels')) return jsonResponse({ name: 'ok' }, 201)
+        return jsonResponse(created, 201)
+      })
+
+      const client = makeClient()
+      await client.createIssue('a', 'body', ['error-report'])
+      await client.createIssue('b', 'body', ['error-report'])
+
+      const labelPosts = mockFetch.mock.calls.filter((args) =>
+        String(args[0]).endsWith('/labels'),
+      )
+      expect(labelPosts).toHaveLength(1)
+    })
+
+    it('skips label creation when autoCreateLabels is false', async () => {
+      mockFetch.mockResolvedValue(jsonResponse(created, 201))
+
+      const client = createGitHubClient({
+        token: 'ghp_test',
+        repo: 'owner/repo',
+        onError,
+        autoCreateLabels: false,
+      })
+      await client.createIssue('title', 'body', ['error-report'])
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(call(0).url).toBe('https://api.github.com/repos/owner/repo/issues')
+    })
+
+    it('retries without labels when GitHub rejects them, so the report is not dropped', async () => {
+      mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/labels')) {
+          return errorResponse(403, 'Forbidden')
+        }
+        const body = JSON.parse(String(init?.body ?? '{}')) as { labels?: string[] }
+        if (body.labels?.length) {
+          return errorResponse(422, 'Validation Failed', {
+            message: 'Validation Failed',
+            errors: [{ value: 'error-report', resource: 'Label', field: 'name', code: 'invalid' }],
+          })
+        }
+        return jsonResponse(created, 201)
+      })
+
+      const client = makeClient()
+      const result = await client.createIssue('title', 'body', ['error-report'])
+
+      expect(result).toEqual({
+        number: 99,
+        url: 'https://github.com/owner/repo/issues/99',
+      })
+      expect(onError).toHaveBeenCalled()
+      const unlabeled = mockFetch.mock.calls.find((args) => {
+        const body = JSON.parse(String((args[1] as RequestInit | undefined)?.body ?? '{}')) as {
+          labels?: string[]
+        }
+        return Array.isArray(body.labels) && body.labels.length === 0
+      })
+      expect(unlabeled).toBeTruthy()
     })
 
     it('returns null and calls onError on failure', async () => {

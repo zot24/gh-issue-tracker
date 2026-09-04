@@ -11,6 +11,8 @@ export interface ErrorTrackerConfig {
   environment?: string
   /** Additional labels applied to created issues (beyond "error-report"). */
   labels?: string[]
+  /** Create missing labels (`error-report`, fingerprints, extras) on first use. Default: true */
+  autoCreateLabels?: boolean
   /** Kill switch. Default: true */
   enabled?: boolean
   /** Called when GitHub API fails. Default: console.error */

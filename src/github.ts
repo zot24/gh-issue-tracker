@@ -13,11 +13,24 @@ export interface GitHubClientConfig {
   token: string
   repo: string // "owner/repo"
   onError: (err: unknown) => void
+  /** Create missing labels before filing an issue. Default: true */
+  autoCreateLabels?: boolean
 }
 
 const API_BASE = 'https://api.github.com'
 const UPLOADS_BASE = 'https://uploads.github.com'
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+const LABEL_COLORS: Record<string, string> = {
+  'error-report': 'B60205',
+  'bug-report': '1D76DB',
+}
+
+function colorForLabel(name: string): string {
+  if (LABEL_COLORS[name]) return LABEL_COLORS[name]
+  if (name.startsWith('fingerprint:')) return '5319E7'
+  return 'CCCCCC'
+}
 
 function parseRepo(repo: string): { owner: string; repo: string } {
   const [owner, name] = repo.split('/')
@@ -29,6 +42,8 @@ function parseRepo(repo: string): { owner: string; repo: string } {
 
 export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
   const { owner, repo } = parseRepo(config.repo)
+  const autoCreateLabels = config.autoCreateLabels !== false
+  const ensuredLabels = new Set<string>()
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${config.token}`,
@@ -81,6 +96,37 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
     })
   }
 
+  async function ensureLabel(name: string): Promise<void> {
+    if (ensuredLabels.has(name)) return
+    const res = await ghFetch('POST', `/repos/${owner}/${repo}/labels`, {
+      name,
+      color: colorForLabel(name),
+      description: 'Auto-created by gh-issue-tracker',
+    })
+    const detail = await res.text().catch(() => '')
+    if (res.ok || (res.status === 422 && /already_exists/.test(detail))) {
+      ensuredLabels.add(name)
+      return
+    }
+    throw new Error(
+      `GitHub POST /labels failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+
+  async function ensureLabels(names: string[]): Promise<void> {
+    for (const name of names) {
+      try {
+        await ensureLabel(name)
+      } catch (err) {
+        config.onError(err)
+      }
+    }
+  }
+
+  function isMissingLabelFailure(status: number, detail: string): boolean {
+    return status === 422 && /Label/.test(detail)
+  }
+
   let repositoryId: number | undefined
 
   async function resolveRepositoryId(): Promise<number> {
@@ -122,13 +168,46 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
 
     async createIssue(title: string, body: string, labels: string[]): Promise<CreatedIssue | null> {
       try {
-        const data = (await request('POST', `/repos/${owner}/${repo}/issues`, {
-          title,
-          body,
-          labels,
-        })) as { number: number; html_url: string } | null
-        if (!data) return null
-        return { number: data.number, url: data.html_url }
+        if (autoCreateLabels && labels.length > 0) {
+          await ensureLabels(labels)
+        }
+
+        const post = async (issueLabels: string[]): Promise<CreatedIssue> => {
+          const res = await ghFetch('POST', `/repos/${owner}/${repo}/issues`, {
+            title,
+            body,
+            labels: issueLabels,
+          })
+          const detail = await res.text().catch(() => '')
+          if (!res.ok) {
+            const err = new Error(
+              `GitHub POST /issues failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
+            )
+            ;(err as Error & { status: number; detail: string }).status = res.status
+            ;(err as Error & { status: number; detail: string }).detail = detail
+            throw err
+          }
+          const data = JSON.parse(detail) as { number: number; html_url: string }
+          return { number: data.number, url: data.html_url }
+        }
+
+        try {
+          return await post(labels)
+        } catch (err) {
+          const status = (err as { status?: number }).status
+          const detail = (err as { detail?: string }).detail ?? (err instanceof Error ? err.message : '')
+          if (labels.length > 0 && status !== undefined && isMissingLabelFailure(status, detail)) {
+            config.onError(
+              new Error(
+                `[gh-issue-tracker] Label does not exist on ${config.repo} (${labels.join(', ')}). ` +
+                  `Set autoCreateLabels: true (default) or run: gh label create <name> --repo ${config.repo}. ` +
+                  `Filing the issue without labels so the report is not dropped.`,
+              ),
+            )
+            return await post([])
+          }
+          throw err
+        }
       } catch (err) {
         config.onError(err)
         return null

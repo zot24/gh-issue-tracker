@@ -62,6 +62,7 @@ export function init(cfg: ErrorTrackerConfig): void {
     token: config.githubToken,
     repo: config.githubRepo,
     onError: config.onError!,
+    autoCreateLabels: config.autoCreateLabels,
   })
 
   limiter = new RateLimiter({

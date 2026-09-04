@@ -9,6 +9,19 @@ import type { BugReportInput } from './types'
 export const DEFAULT_SCREENSHOT_BRANCH = 'bug-report-screenshots'
 export const DEFAULT_SCREENSHOT_PROXY_PATH = 'api/bug-screenshots'
 
+/** MIME type from a screenshot filename. Falls back to image/png. */
+export function contentTypeFromFilename(filename: string): string {
+  const ext = filename.toLowerCase().split('.').pop() ?? ''
+  if (ext === 'png') return 'image/png'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'gif') return 'image/gif'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'mp4') return 'video/mp4'
+  if (ext === 'webm') return 'video/webm'
+  if (ext === 'mov') return 'video/quicktime'
+  return 'image/png'
+}
+
 /** Base64-encode bytes without Node's Buffer (edge/Workers safe). */
 export function uint8ToBase64(bytes: Uint8Array): string {
   let binary = ''

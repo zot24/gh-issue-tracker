@@ -22,16 +22,18 @@ export interface ErrorTrackerConfig {
   /** Reopen closed issues on recurrence instead of ignoring. Default: true */
   reopenClosed?: boolean
   /**
-   * Branch where bug-report screenshots are committed (via `captureBugReport`).
-   * Default: "bug-report-screenshots"
+   * How bug-report screenshots are stored.
+   * `"user-attachment"` (default): GitHub user-attachments CDN (`gh --attach`).
+   * `"branch"`: Contents API + optional proxy. GHES / existing setups only.
+   */
+  screenshotUpload?: 'user-attachment' | 'branch'
+  /**
+   * Branch where bug-report screenshots are committed when
+   * `screenshotUpload` is `"branch"`. Default: "bug-report-screenshots"
    */
   screenshotBranch?: string
   /**
-   * Base URL of your app's screenshot proxy, no trailing slash. When set,
-   * screenshot links point to `${appBaseUrl}/${screenshotProxyPath}/<path>`,
-   * which must serve the image via `fetchIssueImage()` — required for PRIVATE
-   * repos, whose `raw.githubusercontent.com` URLs 404 anonymously. When unset,
-   * links use `raw.githubusercontent.com` (works for public repos only).
+   * Proxy base URL, no trailing slash. Only used when `screenshotUpload` is `"branch"`.
    */
   appBaseUrl?: string
   /** Path segment for the screenshot proxy route. Default: "api/bug-screenshots" */
@@ -86,6 +88,8 @@ export interface GitHubClient {
   /**
    * Commit an image to `branch` at `path` (creating the branch from the repo's
    * default branch if it doesn't exist). Returns true on success.
+   * Prefer `uploadUserAttachment` for new bug reports — GitHub's native
+   * user-attachments CDN, same as `gh --attach`.
    */
   uploadImage(opts: {
     branch: string
@@ -93,6 +97,16 @@ export interface GitHubClient {
     base64Content: string
     message: string
   }): Promise<boolean>
+  /**
+   * Upload an image/video as a GitHub user attachment (the same endpoint
+   * `gh issue create --attach` uses). Returns the anonymized asset URL to
+   * embed in issue markdown, or null on failure.
+   */
+  uploadUserAttachment(opts: {
+    name: string
+    contentType: string
+    data: Uint8Array
+  }): Promise<string | null>
 }
 
 /** Who filed a bug report. */
@@ -122,7 +136,7 @@ export interface BugReportInput {
   pin?: { x: number; y: number }
   /** Free-form environment metadata rendered into the issue body. */
   metadata?: Record<string, string | number | boolean | null | undefined>
-  /** Optional screenshot, committed to the screenshot branch and linked. */
+  /** Optional screenshot, uploaded as a GitHub user attachment and embedded. */
   screenshot?: BugReportScreenshot
   /** Extra labels added alongside the default "bug-report" label. */
   labels?: string[]

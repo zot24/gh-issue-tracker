@@ -226,6 +226,142 @@ describe('createGitHubClient', () => {
     })
   })
 
+  describe('uploadUserAttachment', () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+    const assetUrl = 'https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+
+    it('POSTs the bytes to uploads.github.com and returns the asset URL', async () => {
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ id: 4242 }, 200))
+        .mockResolvedValueOnce(jsonResponse({ url: assetUrl }, 201))
+
+      const client = makeClient()
+      const url = await client.uploadUserAttachment({
+        name: 'screenshot.png',
+        contentType: 'image/png',
+        data: png,
+      })
+
+      expect(url).toBe(assetUrl)
+
+      const repo = call(0)
+      expect(repo.init.method).toBe('GET')
+      expect(repo.url).toBe('https://api.github.com/repos/owner/repo')
+
+      const upload = call(1)
+      expect(upload.init.method).toBe('POST')
+      expect(upload.url).toBe(
+        'https://uploads.github.com/user-attachments/assets?name=screenshot.png&content_type=image%2Fpng&repository_id=4242',
+      )
+      expect((upload.init.headers as Record<string, string>)['Content-Type']).toBe(
+        'application/octet-stream',
+      )
+      expect((upload.init.headers as Record<string, string>).Authorization).toBe('Bearer ghp_test')
+      expect((upload.init.headers as Record<string, string>).Accept).toBe(
+        'application/vnd.github+json',
+      )
+      expect(new Uint8Array(upload.init.body as ArrayBuffer)).toEqual(png)
+    })
+
+    it('caches the repository id so a second upload skips the lookup', async () => {
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ id: 4242 }, 200))
+        .mockResolvedValueOnce(jsonResponse({ url: assetUrl }, 201))
+        .mockResolvedValueOnce(jsonResponse({ url: `${assetUrl}-2` }, 201))
+
+      const client = makeClient()
+      await client.uploadUserAttachment({
+        name: 'a.png',
+        contentType: 'image/png',
+        data: png,
+      })
+      await client.uploadUserAttachment({
+        name: 'b.png',
+        contentType: 'image/png',
+        data: png,
+      })
+
+      expect(mockFetch).toHaveBeenCalledTimes(3)
+      expect(call(0).url).toBe('https://api.github.com/repos/owner/repo')
+      expect(call(1).url).toContain('name=a.png')
+      expect(call(2).url).toContain('name=b.png')
+    })
+
+    it('strips directory components from the filename', async () => {
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ id: 7 }, 200))
+        .mockResolvedValueOnce(jsonResponse({ url: assetUrl }, 201))
+
+      const client = makeClient()
+      await client.uploadUserAttachment({
+        name: 'foo/bar/shot.png',
+        contentType: 'image/png',
+        data: png,
+      })
+
+      expect(call(1).url).toContain('name=shot.png')
+      expect(call(1).url).not.toContain('foo')
+    })
+
+    it('returns null and calls onError when the upload fails', async () => {
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ id: 4242 }, 200))
+        .mockResolvedValueOnce(errorResponse(404, 'Not Found'))
+
+      const client = makeClient()
+      const url = await client.uploadUserAttachment({
+        name: 'screenshot.png',
+        contentType: 'image/png',
+        data: png,
+      })
+
+      expect(url).toBeNull()
+      expect(onError).toHaveBeenCalledWith(expect.any(Error))
+    })
+
+    it('returns null and calls onError when the server omits the asset URL', async () => {
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ id: 4242 }, 200))
+        .mockResolvedValueOnce(jsonResponse({}, 201))
+
+      const client = makeClient()
+      const url = await client.uploadUserAttachment({
+        name: 'screenshot.png',
+        contentType: 'image/png',
+        data: png,
+      })
+
+      expect(url).toBeNull()
+      expect(onError).toHaveBeenCalled()
+    })
+
+    it('rejects empty files without hitting the network', async () => {
+      const client = makeClient()
+      const url = await client.uploadUserAttachment({
+        name: 'empty.png',
+        contentType: 'image/png',
+        data: new Uint8Array(),
+      })
+
+      expect(url).toBeNull()
+      expect(mockFetch).not.toHaveBeenCalled()
+      expect(onError).toHaveBeenCalled()
+    })
+
+    it('rejects images larger than 10MB without hitting the network', async () => {
+      const client = makeClient()
+      const url = await client.uploadUserAttachment({
+        name: 'huge.png',
+        contentType: 'image/png',
+        data: new Uint8Array(10 * 1024 * 1024 + 1),
+      })
+
+      expect(url).toBeNull()
+      expect(mockFetch).not.toHaveBeenCalled()
+      expect(onError).toHaveBeenCalled()
+    })
+  })
+
   describe('addReaction', () => {
     it('adds a thumbs-up reaction', async () => {
       mockFetch.mockResolvedValue(jsonResponse({ id: 1 }, 201))

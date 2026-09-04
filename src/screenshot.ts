@@ -1,13 +1,6 @@
 /**
- * Screenshot read-through proxy.
- *
- * Screenshots attached by `captureBugReport` are committed to a branch in the
- * repo. For PRIVATE repos, `raw.githubusercontent.com` 404s anonymously and the
- * signed `?token=` URL is short-lived, so an issue body can't embed them
- * directly. `fetchIssueImage` fetches the bytes server-side with the token; wrap
- * its result in your framework's Response (see the README for a Next.js route).
- *
- * Edge-native: uses only `fetch`, so it runs on Node 20+, edge, and Workers.
+ * Screenshot read-through proxy for `screenshotUpload: "branch"` (legacy).
+ * Default bug reports use GitHub user-attachments and do not need this.
  */
 
 import type { FetchIssueImageOptions, FetchIssueImageResult } from './types'

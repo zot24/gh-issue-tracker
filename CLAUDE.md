@@ -19,13 +19,11 @@ npm install modern-screenshot
 ```env
 GITHUB_TOKEN=github_pat_xxx     # fine-grained PAT (scopes below)
 GITHUB_REPO=owner/repo          # where issues are created
-# Optional — required for screenshots on PRIVATE repos:
-APP_BASE_URL=https://yourapp.com
 ```
 
 **Token scopes (fine-grained PAT on the target repo):**
 - **Issues: Read and write** — always required.
-- **Contents: Read and write** — required ONLY for bug-report screenshots (they're committed to a `bug-report-screenshots` branch).
+- **Contents: Read and write** — only if `screenshotUpload: "branch"`.
 
 Without `GITHUB_TOKEN`, gate with `enabled: !!process.env.GITHUB_TOKEN` so local dev is a no-op.
 
@@ -64,7 +62,7 @@ Options: `minStatus` (default `500`), `catchThrows` (default `true`), `rethrow` 
 
 ### 4. Server: user bug reports with screenshots
 
-`captureBugReport` creates a richly-formatted issue and (optionally) commits a screenshot, embedding it in the body. Unlike `captureException`, it awaits and returns the created issue.
+`captureBugReport` creates a richly-formatted issue and (optionally) uploads a screenshot as a GitHub user attachment. Unlike `captureException`, it awaits and returns the created issue.
 
 ```ts
 // POST /api/bug-reports  (Node.js runtime — multipart form)
@@ -85,26 +83,9 @@ const result = await captureBugReport({
 // → { issueNumber, issueUrl, screenshotUrl } | null
 ```
 
-### 5. Server: screenshot proxy route (private repos)
+### 5. Legacy: branch + proxy (`screenshotUpload: "branch"`)
 
-Private-repo images can't be hot-linked, so serve them through `fetchIssueImage`:
-
-```ts
-// GET /api/bug-screenshots/[...path]  (Node.js runtime)
-import { fetchIssueImage } from 'gh-issue-tracker'
-
-const r = await fetchIssueImage({
-  token: process.env.GITHUB_TOKEN!,
-  repo: process.env.GITHUB_REPO!,
-  path: params.path.join('/'),
-})
-if (r.status !== 200) return new Response(null, { status: r.status })
-return new Response(r.body, {
-  headers: { 'Content-Type': r.contentType!, 'Cache-Control': 'public, max-age=31536000, immutable' },
-})
-```
-
-Set `appBaseUrl` in `init()` (and `screenshotProxyPath` if not the default `api/bug-screenshots`) so the embedded image URL points here.
+Default screenshots don't need this. Only for GHES or existing proxy setups: set `screenshotUpload: "branch"`, `appBaseUrl`, and serve `fetchIssueImage()` at `/api/bug-screenshots/[...path]`.
 
 ### 6. Client: screenshot + submit helpers
 
@@ -139,15 +120,15 @@ src/
 ├── index.ts          Server barrel (gh-issue-tracker): init, captureException, captureMessage, captureBugReport, withErrorReporting, flush, fetchIssueImage + types
 ├── browser.ts        Client barrel (gh-issue-tracker/browser): captureScreenshot, submitBugReport, buildBugReportFormData
 ├── types.ts          All TypeScript interfaces (config, ErrorContext, BugReport*, FetchIssueImage*)
-├── client.ts         Singleton orchestrator — error dedup + captureBugReport (upload screenshot → create issue)
-├── github.ts         fetch-based GitHub REST client (search/create issue, reaction, reopen, uploadImage). No SDK dep. Never throws.
+├── client.ts         Singleton orchestrator — error dedup + captureBugReport (user-attachment upload → create issue)
+├── github.ts         fetch-based GitHub REST client (search/create issue, reaction, reopen, uploadUserAttachment, uploadImage). No SDK dep. Never throws.
 ├── bug-report.ts     Pure helpers: base64 encode, screenshot path, issue body formatting
 ├── screenshot.ts     fetchIssueImage — read-through proxy for private-repo screenshots
 ├── handler.ts        withErrorReporting — wrap a route handler to capture thrown errors + returned 5xx
 ├── fingerprint.ts    SHA-256 (Web Crypto) hash of error name + truncated message + normalized top 3 stack frames
 ├── normalizer.ts     Strips line:col numbers, webpack hashes, query strings from stack traces
 ├── rate-limiter.ts   Sliding window (N/min) + dedup window (fingerprint suppression)
-└── __tests__/        61 unit tests (client, github, fingerprint, normalizer, rate-limiter, screenshot, handler)
+└── __tests__/        71 unit tests (client, github, fingerprint, normalizer, rate-limiter, screenshot, handler)
 ```
 
 ### Key design decisions
@@ -177,7 +158,7 @@ Error thrown → captureException(error, context?)
 ```bash
 pnpm install        # install dependencies
 pnpm build          # build ESM + CJS + .d.ts via tsup
-pnpm test           # run all 61 tests with vitest
+pnpm test           # run all 71 tests with vitest
 pnpm type-check     # tsc --noEmit
 ```
 

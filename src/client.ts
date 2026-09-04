@@ -21,6 +21,7 @@ import {
   DEFAULT_SCREENSHOT_BRANCH,
   DEFAULT_SCREENSHOT_PROXY_PATH,
   buildScreenshotPath,
+  contentTypeFromFilename,
   formatBugReportBody,
   pagePath,
   truncate,
@@ -143,10 +144,10 @@ export function captureMessage(
  * — it awaits the GitHub calls and returns the created issue so the caller (an
  * API route) can surface the result. Requires `init()` to have been called.
  *
- * If `input.screenshot` is set, the image is committed to the configured
- * screenshot branch and embedded in the issue. For private repos, set
- * `appBaseUrl` in `init()` and serve `fetchIssueImage()` at the proxy path so
- * the image renders.
+ * If `input.screenshot` is set, the image is uploaded as a GitHub user
+ * attachment by default (same path as `gh issue create --attach`) and
+ * embedded in the issue. Set `screenshotUpload: "branch"` to keep the
+ * Contents-API + proxy path (GitHub Enterprise Server / existing setups).
  */
 export async function captureBugReport(
   input: BugReportInput,
@@ -157,27 +158,10 @@ export async function captureBugReport(
 
   let screenshotUrl: string | undefined
   if (input.screenshot) {
-    const branch = cfg.screenshotBranch ?? DEFAULT_SCREENSHOT_BRANCH
-    const path = buildScreenshotPath(input.reporter.id, input.screenshot.filename)
-    const uploaded = await gh.uploadImage({
-      branch,
-      path,
-      base64Content: uint8ToBase64(input.screenshot.data),
-      message: `chore(bug-report): add screenshot ${path}`,
-    })
-    if (uploaded) {
-      if (cfg.appBaseUrl) {
-        const base = cfg.appBaseUrl.replace(/\/$/, '')
-        const proxy = (cfg.screenshotProxyPath ?? DEFAULT_SCREENSHOT_PROXY_PATH).replace(
-          /^\/|\/$/g,
-          '',
-        )
-        screenshotUrl = `${base}/${proxy}/${path}`
-      } else {
-        // Public-repo fallback — raw.githubusercontent works without a token.
-        screenshotUrl = `https://raw.githubusercontent.com/${cfg.githubRepo}/${branch}/${path}`
-      }
-    }
+    screenshotUrl =
+      cfg.screenshotUpload === 'branch'
+        ? await uploadScreenshotToBranch(gh, cfg, input)
+        : await uploadScreenshotAsAttachment(gh, input)
   }
 
   const title = `[Bug Report] ${truncate(input.message.replace(/\s+/g, ' ').trim(), 80)} — ${pagePath(input.pageUrl)}`
@@ -303,6 +287,48 @@ function formatBody(
   }
 
   return sections.join('\n')
+}
+
+async function uploadScreenshotAsAttachment(
+  gh: GitHubClient,
+  input: BugReportInput,
+): Promise<string | undefined> {
+  const shot = input.screenshot
+  if (!shot) return undefined
+  const url = await gh.uploadUserAttachment({
+    name: shot.filename,
+    contentType: shot.contentType ?? contentTypeFromFilename(shot.filename),
+    data: shot.data,
+  })
+  return url ?? undefined
+}
+
+async function uploadScreenshotToBranch(
+  gh: GitHubClient,
+  cfg: ErrorTrackerConfig,
+  input: BugReportInput,
+): Promise<string | undefined> {
+  const shot = input.screenshot
+  if (!shot) return undefined
+  const branch = cfg.screenshotBranch ?? DEFAULT_SCREENSHOT_BRANCH
+  const path = buildScreenshotPath(input.reporter.id, shot.filename)
+  const uploaded = await gh.uploadImage({
+    branch,
+    path,
+    base64Content: uint8ToBase64(shot.data),
+    message: `chore(bug-report): add screenshot ${path}`,
+  })
+  if (!uploaded) return undefined
+  if (cfg.appBaseUrl) {
+    const base = cfg.appBaseUrl.replace(/\/$/, '')
+    const proxy = (cfg.screenshotProxyPath ?? DEFAULT_SCREENSHOT_PROXY_PATH).replace(
+      /^\/|\/$/g,
+      '',
+    )
+    return `${base}/${proxy}/${path}`
+  }
+  // Public-repo fallback — raw.githubusercontent works without a token.
+  return `https://raw.githubusercontent.com/${cfg.githubRepo}/${branch}/${path}`
 }
 
 function recurrenceComment(): string {

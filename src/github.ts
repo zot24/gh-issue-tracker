@@ -16,6 +16,8 @@ export interface GitHubClientConfig {
 }
 
 const API_BASE = 'https://api.github.com'
+const UPLOADS_BASE = 'https://uploads.github.com'
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 function parseRepo(repo: string): { owner: string; repo: string } {
   const [owner, name] = repo.split('/')
@@ -77,6 +79,18 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
       ref: `refs/heads/${branch}`,
       sha: defRef.object.sha,
     })
+  }
+
+  let repositoryId: number | undefined
+
+  async function resolveRepositoryId(): Promise<number> {
+    if (repositoryId !== undefined) return repositoryId
+    const info = (await request('GET', `/repos/${owner}/${repo}`)) as { id: number }
+    if (!info?.id) {
+      throw new Error(`GitHub GET /repos/${owner}/${repo} returned no repository id`)
+    }
+    repositoryId = info.id
+    return repositoryId
   }
 
   return {
@@ -156,6 +170,56 @@ export function createGitHubClient(config: GitHubClientConfig): GitHubClient {
       } catch (err) {
         config.onError(err)
         return false
+      }
+    },
+
+    async uploadUserAttachment({ name, contentType, data }): Promise<string | null> {
+      try {
+        if (data.byteLength === 0) {
+          throw new Error(`attachment "${name}" is empty`)
+        }
+        if (data.byteLength > MAX_IMAGE_BYTES) {
+          throw new Error(
+            `attachment "${name}" is ${data.byteLength} bytes; images must be at most ${MAX_IMAGE_BYTES}`,
+          )
+        }
+
+        const filename = name.split(/[/\\]/).pop() || 'screenshot.png'
+        const repoId = await resolveRepositoryId()
+        const params = new URLSearchParams({
+          name: filename,
+          content_type: contentType,
+          repository_id: String(repoId),
+        })
+
+        const bytes = new Uint8Array(data.byteLength)
+        bytes.set(data)
+
+        const res = await fetch(`${UPLOADS_BASE}/user-attachments/assets?${params.toString()}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.token}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'User-Agent': 'gh-issue-tracker',
+            'Content-Type': 'application/octet-stream',
+          },
+          body: bytes.buffer,
+        })
+        if (!res.ok) {
+          const detail = await res.text().catch(() => '')
+          throw new Error(
+            `GitHub POST /user-attachments/assets failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
+          )
+        }
+        const payload = (await res.json().catch(() => null)) as { url?: string } | null
+        if (!payload?.url) {
+          throw new Error('GitHub user-attachment upload returned no asset URL')
+        }
+        return payload.url
+      } catch (err) {
+        config.onError(err)
+        return null
       }
     },
   }

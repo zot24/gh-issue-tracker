@@ -1,6 +1,6 @@
 {
   "name": "gh-issue-tracker",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Lightweight error tracking and user bug reports that create GitHub Issues instead of sending to SaaS. Screenshot capture, deduplication, fingerprinting, and rate limiting built-in. Edge-native, zero deps.",
   "type": "module",
   "main": "./dist/index.cjs",

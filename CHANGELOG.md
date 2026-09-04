@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/zot24/gh-issue-tracker/compare/v1.5.0...v1.6.0) (2026-09-04)
+
+
+### Features
+
+* upload bug-report screenshots as GitHub user attachments ([#31](https://github.com/zot24/gh-issue-tracker/issues/31)) ([89c1ee3](https://github.com/zot24/gh-issue-tracker/commit/89c1ee312b555c085f5eb343ceba1b092f004f13))
+
+
+### Bug Fixes
+
+* auto-create missing GitHub labels before filing issues ([#33](https://github.com/zot24/gh-issue-tracker/issues/33)) ([0719e0f](https://github.com/zot24/gh-issue-tracker/commit/0719e0fc477928b3eeff3ae0478fa8b589b63016)), closes [#24](https://github.com/zot24/gh-issue-tracker/issues/24)
+
 ## [1.5.0](https://github.com/zot24/gh-issue-tracker/compare/v1.4.0...v1.5.0) (2026-07-15)
 
 
